@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Split the G</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen pub counter — canvas fills the screen, slim brass HUD on top, a bottom panel for talk and buttons.
+   Deliberately single (dark) theme: it's a dim bar. */
+:root {
+  --bg: #120d0a;
+  --glow: #3d2614;
+  --cream: #f1e4c6;
+  --muted: #b3a284;
+  --brass: #c9a14e;
+  --brass-hi: #e2bf6f;
+  --ink: #1a120b;
+  --display: "Abril Fatface", "Didot", Georgia, serif;
+  --label: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--cream);
+  font: 16px/1.45 var(--body);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+
+.hud {
+  position: fixed; inset: 0 0 auto;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-family: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 13px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.hud .brand { color: var(--brass); font-weight: 700; }
+.hud .tally { font-variant-numeric: tabular-nums; }
+
+.panel {
+  position: fixed; inset: auto 0 0;
+  padding-top: 48px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 88%, transparent) 40%, var(--bg));
+  pointer-events: none;
+}
+.panel > * { max-width: 26rem; margin-inline: auto; pointer-events: auto; }
+
+h1, h2 {
+  font-family: var(--display);
+  font-weight: 400;
+  margin: 0;
+  line-height: 1;
+  text-wrap: balance;
+  letter-spacing: 0.005em;
+}
+h1 { font-size: clamp(2.6rem, 11vw, 3.4rem); }
+h2 { font-size: clamp(2.2rem, 9vw, 2.8rem); }
+.lede { margin: 10px 0 18px; color: var(--cream); opacity: 0.88; max-width: 34ch; }
+.fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+
+button {
+  display: block; width: 100%;
+  appearance: none; border: 0; cursor: pointer;
+  padding: 15px 18px;
+  border-radius: 3px;
+  background: linear-gradient(to bottom, var(--brass-hi), var(--brass));
+  color: var(--ink);
+  font: 700 17px/1 var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 6px 18px rgba(0,0,0,0.45);
+}
+button:active { transform: translateY(1px); filter: brightness(0.95); }
+button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+
+.status {
+  font-family: var(--label);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--cream);
+  margin: 0;
+  min-height: 3em;
+}
+.status small { display: block; font: 400 14px/1.4 var(--body); letter-spacing: 0; text-transform: none; color: var(--muted); margin-top: 4px; }
+
+.verdict-sub { margin: 8px 0 14px; opacity: 0.88; }
+.stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin: 0 0 16px; padding: 12px 0;
+  border-block: 1px solid color-mix(in srgb, var(--brass) 35%, transparent);
+}
+.stats div { min-width: 0; }
+.stats dt { font: 600 11px/1 var(--label); text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); }
+.stats dd { margin: 6px 0 0; font: 600 22px/1 var(--label); font-variant-numeric: tabular-nums; color: var(--cream); }
+.stats dd.hit { color: var(--brass-hi); }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="A pint of stout with a G on the glass"></canvas>
+
+<header class="hud">
+  <span class="brand">Split the G</span>
+  <span class="tally" id="tally">Pint 0 · Best –</span>
+</header>
+
+<section class="panel">
+  <div id="intro">
+    <h1>Split the G</h1>
+    <p class="lede">One sip. Tip your phone like a pint and stop when the line between stout and head cuts the G in half.</p>
+    <button id="go" type="button">Pour a pint</button>
+    <p class="fine">Tip the phone sideways to drink. No tilt sensor? Drag the glass sideways.</p>
+  </div>
+
+  <p id="status" class="status" hidden></p>
+
+  <div id="result" hidden>
+    <h2 id="verdict">Split it.</h2>
+    <p id="verdictSub" class="verdict-sub"></p>
+    <dl class="stats">
+      <div><dt>Off by</dt><dd id="off">–</dd></div>
+      <div><dt>Score</dt><dd id="score">–</dd></div>
+      <div><dt>Best</dt><dd id="best">–</dd></div>
+    </dl>
+    <button id="again" type="button">Pour another</button>
+  </div>
+</section>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cv = $('scene'), ctx = cv.getContext('2d');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- Glass geometry: units of interior height, y down, origin at inner base centre ----------
+  // [height fraction, half width] for a tulip pint: narrow foot, swelling belly, slight lip.
+  const PROFILE = [[0, .19], [.15, .2], [.4, .226], [.65, .262], [.82, .282], [.93, .278], [1, .268]];
+  function halfW(t) {
+    let i = 0;
+    while (i < PROFILE.length - 2 && t > PROFILE[i + 1][0]) i++;
+    const a = PROFILE[Math.max(i - 1, 0)][1], b = PROFILE[i][1], c = PROFILE[i + 1][1];
+    const d = PROFILE[Math.min(i + 2, PROFILE.length - 1)][1];
+    const u = (t - PROFILE[i][0]) / (PROFILE[i + 1][0] - PROFILE[i][0]);
+    return 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u);
+  }
+  const N = 36, POLY = [];
+  for (let i = 0; i <= N; i++) POLY.push([halfW(i / N), -i / N]);
+  for (let i = N; i >= 0; i--) POLY.push([-halfW(i / N), -i / N]);
+  const RIM_R = POLY[N], RIM_L = POLY[N + 1];
+
+  const dot = (p, g) => p[0] * g[0] + p[1] * g[1];
+  function area(p) {
+    let s = 0;
+    for (let i = 0, n = p.length; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      s += a[0] * b[1] - b[0] * a[1];
+    }
+    return Math.abs(s) / 2;
+  }
+  // Part of the glass on the gravity side of the line dot(p, g) = d.
+  function clip(poly, g, d) {
+    const out = [];
+    for (let i = 0, n = poly.length; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n];
+      const da = dot(a, g) - d, db = dot(b, g) - d;
+      if (da >= 0) out.push(a);
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    return out;
+  }
+  const A0 = area(POLY);
+  // Surface offset that holds volume V when gravity points along g.
+  function levelFor(V, g) {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of POLY) { const k = dot(p, g); if (k < lo) lo = k; if (k > hi) hi = k; }
+    if (V >= A0) return lo;
+    if (V <= 0) return hi;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      if (area(clip(POLY, g, mid)) > V) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  // The G: centre height and letter height, as fractions of the glass. 150 mm is a pint glass's inside height.
+  const G_MID = 0.6, G_H = 0.11, GLASS_MM = 150;
+
+  // ---------- State ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+  const S = {
+    phase: 'title', phaseT: 0,
+    Vs: 0, Vh: 0, drank: 0,
+    psi: 0, omega: 0,
+    glassRot: 0, dragTarget: 0,
+    flow: 0, streamW: 0, quietT: 0,
+    surge: 1, particles: [],
+    result: null,
+    pints: 0, best: Number(store.get('stg-best')) || 0
+  };
+  function fillPint() {
+    const stoutTop = 0.83 + Math.random() * 0.04;
+    const headTop = Math.min(0.955, stoutTop + 0.075 + Math.random() * 0.025);
+    S.Vs = area(clip(POLY, [0, 1], -stoutTop));
+    S.Vh = area(clip(POLY, [0, 1], -headTop)) - S.Vs;
+    S.drank = 0;
+  }
+  fillPint();
+
+  // ---------- Input ----------
+  let sensorActive = false, sensorAngle = 0, dragging = false, dragStartX = 0, keyDir = 0, W = 0, H = 0, DPR = 1;
+
+  function onOrient(e) {
+    if (e.beta == null || e.gamma == null) return;
+    const b = e.beta * Math.PI / 180, c = e.gamma * Math.PI / 180;
+    // Gravity projected onto the screen, in screen coords (x right, y down).
+    let gx = Math.sin(c) * Math.cos(b), gy = Math.sin(b);
+    const ang = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180;
+    if (ang) { const x = gx * Math.cos(ang) - gy * Math.sin(ang); gy = gx * Math.sin(ang) + gy * Math.cos(ang); gx = x; }
+    sensorActive = true;
+    sensorAngle = Math.hypot(gx, gy) < 0.3 ? 0 : Math.atan2(gx, gy);
+  }
+
+  cv.addEventListener('pointerdown', e => {
+    dragging = true; dragStartX = e.clientX;
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    S.dragTarget = Math.max(-2.4, Math.min(2.4, (e.clientX - dragStartX) * 2.8 / Math.max(W, 320)));
+  });
+  const endDrag = () => { dragging = false; S.dragTarget = 0; };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') keyDir = -1;
+    else if (e.key === 'ArrowRight') keyDir = 1;
+  });
+  addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { keyDir = 0; S.dragTarget = 0; }
+  });
+
+  async function enableSensors() {
+    try {
+      if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        await DeviceOrientationEvent.requestPermission();
+      }
+    } catch {}
+    addEventListener('deviceorientation', onOrient);
+    try { await navigator.wakeLock?.request('screen'); } catch {}
+  }
+
+  // ---------- Phases & UI ----------
+  const ui = { intro: $('intro'), status: $('status'), result: $('result') };
+  function show(which) { for (const k in ui) ui[k].hidden = k !== which; }
+  function setStatus(main, sub) {
+    ui.status.textContent = main;
+    if (sub) { const s = document.createElement('small'); s.textContent = sub; ui.status.append(s); }
+  }
+  function tally() {
+    $('tally').textContent = `Pint ${S.pints} · Best ${S.best ? S.best : '–'}`;
+  }
+  tally();
+
+  function tipHint() {
+    return sensorActive
+      ? ['Tip the phone sideways to drink', 'One sip only. Level it out to stop.']
+      : ['Drag sideways to tip the glass', 'One sip only. Let go to stop.'];
+  }
+
+  function setPhase(p) {
+    S.phase = p; S.phaseT = 0;
+    if (p === 'settle') {
+      fillPint();
+      S.surge = 0; S.result = null; S.quietT = 0;
+      S.particles = Array.from({ length: 170 }, () => ({
+        x: (Math.random() - 0.5) * 0.7, y: -0.04 - Math.random() * 0.8,
+        r: 0.002 + Math.random() * 0.003, v: 0.03 + Math.random() * 0.06
+      }));
+      show('status');
+      setStatus('Letting it settle…', 'A perfect pour takes 119.5 seconds. We’ll give you three.');
+    } else if (p === 'ready') {
+      setStatus(...tipHint());
+    } else if (p === 'drinking') {
+      setStatus('Drinking…', sensorActive ? 'Bring it level to stop.' : 'Let go to stop.');
+    } else if (p === 'resolve') {
+      setStatus('Let’s have a look…');
+    } else if (p === 'result') {
+      showResult();
+    }
+  }
+
+  function showResult() {
+    const ys = levelFor(S.Vs, [0, 1]);
+    const err = -ys - G_MID;            // >0: line sits above the middle of the G
+    const mm = err * GLASS_MM, a = Math.abs(mm), half = G_H * GLASS_MM / 2;
+    let v, sub;
+    if (S.Vs < 0.03 * A0) { v = 'Necked it.'; sub = 'That’s not splitting the G. That’s finishing the pint.'; }
+    else if (a <= 1.5) { v = 'Split it.'; sub = 'Straight through the middle of the G. The barman nods.'; }
+    else if (a <= 4) { v = 'So close.'; sub = mm > 0 ? 'A shade high. One more swallow would have done it.' : 'A shade low. You went just past the middle.'; }
+    else if (a <= half) { v = 'On the G.'; sub = mm > 0 ? 'Top half of the G. Take a bigger gulp next time.' : 'Bottom half of the G. Ease off sooner.'; }
+    else if (mm > 0) { v = 'Missed the G.'; sub = 'The line never reached the G. Get stuck in.'; }
+    else { v = 'Gone past it.'; sub = 'You drank straight through the G.'; }
+    const score = S.Vs < 0.03 * A0 ? 0 : Math.round(100 * Math.exp(-((a / 5) ** 2)));
+    S.pints++;
+    const newBest = score > S.best;
+    if (newBest) { S.best = score; store.set('stg-best', String(score)); }
+    S.result = { ys, score };
+    $('verdict').textContent = v;
+    $('verdictSub').textContent = sub;
+    $('off').textContent = a < 0.05 ? '0.0 mm' : `${a.toFixed(1)} mm ${mm > 0 ? 'high' : 'low'}`;
+    $('score').textContent = score;
+    $('score').classList.toggle('hit', score >= 90);
+    $('best').textContent = S.best || '–';
+    $('best').classList.toggle('hit', newBest && score > 0);
+    tally();
+    show('result');
+    if (a <= 1.5) try { navigator.vibrate?.([30, 40, 30]); } catch {}
+  }
+
+  let sensorsAsked = false;
+  async function start() {
+    if (!sensorsAsked) { sensorsAsked = true; await enableSensors(); }
+    setPhase('settle');
+  }
+  $('go').addEventListener('click', start);
+  $('again').addEventListener('click', start);
+  addEventListener('keydown', e => {
+    if ((e.key === ' ' || e.key === 'Enter') && (S.phase === 'title' || S.phase === 'result') && document.activeElement?.tagName !== 'BUTTON') {
+      e.preventDefault(); start();
+    }
+  });
+
+  // ---------- Simulation ----------
+  function step(dt) {
+    S.phaseT += dt;
+    const playable = S.phase === 'ready' || S.phase === 'drinking';
+    if (keyDir && playable) S.dragTarget = Math.max(-2.4, Math.min(2.4, S.dragTarget + keyDir * 1.3 * dt));
+    const usingSensor = sensorActive && !dragging && !keyDir;
+
+    const rotTarget = playable && !usingSensor ? S.dragTarget : 0;
+    S.glassRot += (rotTarget - S.glassRot) * (1 - Math.exp(-dt * (dragging ? 18 : 6)));
+
+    let target = 0;
+    if (playable) target = usingSensor ? sensorAngle : S.glassRot;
+    else if (!usingSensor) target = S.glassRot;
+
+    // Liquid lags the glass on a damped spring, which gives the slosh.
+    const k = 70, c = reduced ? 22 : 10, h = dt / 4;
+    for (let i = 0; i < 4; i++) {
+      S.omega += (k * (target - S.psi) - c * S.omega) * h;
+      S.psi += S.omega * h;
+    }
+
+    // Pour whatever is above the low point of the rim.
+    S.flow = 0;
+    if (playable) {
+      const g = [Math.sin(S.psi), Math.cos(S.psi)];
+      const dRim = Math.max(dot(RIM_R, g), dot(RIM_L, g));
+      const Vmax = area(clip(POLY, g, dRim));
+      const V = S.Vs + S.Vh;
+      if (V > Vmax) {
+        const out = Math.min(V - Vmax, dt * Math.min(3 * (V - Vmax), 0.25 * A0));
+        // You drink through the head: mostly stout goes, the head thins slowly.
+        let fromHead = S.Vh > 0.012 * A0 ? out * 0.15 : 0;
+        let fromStout = out - fromHead;
+        if (fromStout > S.Vs) { fromHead += fromStout - S.Vs; fromStout = S.Vs; }
+        S.Vs -= fromStout;
+        S.Vh = Math.max(0, S.Vh - fromHead);
+        S.drank += out;
+        S.flow = out / dt;
+      }
+    }
+    S.streamW += (Math.sqrt(S.flow / A0) * 0.11 - S.streamW) * (1 - Math.exp(-dt * 14));
+
+    if (S.phase === 'settle') {
+      S.surge = Math.min(1, S.phaseT / 3);
+      for (const p of S.particles) { p.y += p.v * dt; p.x += Math.sin((p.y + p.v) * 40) * 0.004 * dt; }
+      if (S.phaseT > 3) setPhase('ready');
+    } else if (S.phase === 'ready') {
+      if (S.drank > 0.004 * A0) setPhase('drinking');
+    } else if (S.phase === 'drinking') {
+      if (Math.abs(S.psi) < 0.2 && S.flow < 1e-4 && !dragging && !keyDir) S.quietT += dt; else S.quietT = 0;
+      if (S.quietT > 0.6 || S.Vs + S.Vh < 0.002 * A0) setPhase('resolve');
+    } else if (S.phase === 'resolve') {
+      if (S.phaseT > 1.1) setPhase('result');
+    }
+  }
+
+  // ---------- Rendering ----------
+  function resize() {
+    DPR = Math.min(devicePixelRatio || 1, 2.5);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  function polyPath(p) {
+    ctx.beginPath();
+    ctx.moveTo(p[0][0], p[0][1]);
+    for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]);
+    ctx.closePath();
+  }
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const rgb = a => `rgb(${a[0]},${a[1]},${a[2]})`;
+
+  function layout() {
+    const top = 64, bottom = H - (S.phase === 'title' ? 230 : 200);
+    const avail = Math.max(160, bottom - top);
+    const Hg = Math.min(avail * 0.86, (W * 0.64) / 0.6);
+    const mid = top + avail / 2;
+    return { Hg, cx: W / 2, baseY: mid + Hg * 0.5 };
+  }
+
+  function draw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const { Hg, cx, baseY } = layout();
+
+    // Room: dark bar, warm light overhead, a wooden counter.
+    ctx.fillStyle = '#120d0a';
+    ctx.fillRect(0, 0, W, H);
+    const glow = ctx.createRadialGradient(cx, baseY - Hg * 0.9, 0, cx, baseY - Hg * 0.9, Math.max(W, H) * 0.75);
+    glow.addColorStop(0, 'rgba(201,140,70,0.28)');
+    glow.addColorStop(0.5, 'rgba(90,52,24,0.12)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    const counterY = baseY + Hg * 0.075;
+    const wood = ctx.createLinearGradient(0, counterY, 0, H);
+    wood.addColorStop(0, '#3a2414'); wood.addColorStop(0.08, '#24160d'); wood.addColorStop(1, '#0d0907');
+    ctx.fillStyle = wood; ctx.fillRect(0, counterY, W, H - counterY);
+    ctx.fillStyle = 'rgba(226,191,111,0.18)'; ctx.fillRect(0, counterY, W, 1);
+
+    // Shadow under the glass.
+    const lift = Math.min(1, Math.abs(S.glassRot) / 0.6);
+    ctx.fillStyle = `rgba(0,0,0,${0.45 * (1 - lift * 0.7)})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, counterY + 2, Hg * 0.26 * (1 + lift * 0.3), Hg * 0.03, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(cx, baseY - Hg * 0.5);
+    ctx.rotate(S.glassRot);
+    ctx.translate(0, Hg * 0.5);
+    ctx.scale(Hg, Hg);
+
+    const g = [Math.sin(S.psi), Math.cos(S.psi)];
+    const V = S.Vs + S.Vh;
+    // Never show liquid above the rim while it pours.
+    const dRim = Math.max(dot(RIM_R, g), dot(RIM_L, g));
+    const Vshow = Math.min(V, area(clip(POLY, g, dRim)));
+    const dTop = levelFor(Vshow, g), dStout = levelFor(Math.min(S.Vs, Vshow), g);
+
+    // Faint glass body.
+    polyPath(POLY);
+    ctx.fillStyle = 'rgba(255,240,220,0.035)';
+    ctx.fill();
+
+    // Head.
+    const head = clip(POLY, g, dTop);
+    if (head.length > 2) {
+      const fg = ctx.createLinearGradient(g[0] * dTop, g[1] * dTop, g[0] * dStout, g[1] * dStout);
+      fg.addColorStop(0, '#f6ead0'); fg.addColorStop(0.6, '#ecdcb6'); fg.addColorStop(1, '#cdb184');
+      polyPath(head); ctx.fillStyle = fg; ctx.fill();
+    }
+
+    // Stout, ruby at the edges where the light comes through.
+    const stout = clip(POLY, g, dStout);
+    if (stout.length > 2) {
+      const s = S.surge, e = s * s * (3 - 2 * s);
+      const sg = ctx.createLinearGradient(-0.3, 0, 0.3, 0);
+      const edge = rgb(mix([150, 110, 74], [74, 22, 12], e));
+      const core = rgb(mix([128, 92, 62], [12, 7, 5], e));
+      sg.addColorStop(0, edge); sg.addColorStop(0.18, core); sg.addColorStop(0.82, core); sg.addColorStop(1, edge);
+      polyPath(stout); ctx.fillStyle = sg; ctx.fill();
+
+      // Cream line where head meets stout.
+      const bl = ctx.createLinearGradient(g[0] * (dStout - 0.012), g[1] * (dStout - 0.012), g[0] * (dStout + 0.02), g[1] * (dStout + 0.02));
+      bl.addColorStop(0, 'rgba(205,177,132,0.9)'); bl.addColorStop(1, 'rgba(205,177,132,0)');
+      ctx.fillStyle = bl; ctx.fill();
+
+      if (S.surge < 1) {
+        ctx.save(); polyPath(stout); ctx.clip();
+        ctx.fillStyle = `rgba(236,220,182,${0.55 * (1 - e)})`;
+        for (const p of S.particles) { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+    }
+
+    // The G, printed on the front of the glass.
+    ctx.save();
+    ctx.translate(0, -G_MID);
+    ctx.scale(1 / Hg, 1 / Hg);
+    const px = Math.round(G_H * Hg / 0.72);
+    ctx.font = `${px}px "Abril Fatface", Didot, Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const m = ctx.measureText('G');
+    const asc = m.actualBoundingBoxAscent || px * 0.72, desc = m.actualBoundingBoxDescent || 0;
+    const yOff = (asc - desc) / 2;
+    ctx.fillStyle = 'rgba(20,12,6,0.35)';
+    ctx.fillText('G', 1, yOff + 1.5);
+    ctx.fillStyle = 'rgba(214,178,98,0.92)';
+    ctx.fillText('G', 0, yOff);
+    ctx.restore();
+
+    // Highlight streak down the left of the glass.
+    ctx.save(); polyPath(POLY); ctx.clip();
+    const hl = ctx.createLinearGradient(-0.24, 0, -0.15, 0);
+    hl.addColorStop(0, 'rgba(255,255,255,0)'); hl.addColorStop(0.5, 'rgba(255,255,255,0.10)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl; ctx.fillRect(-0.3, -1, 0.2, 1);
+    ctx.restore();
+
+    // Walls.
+    ctx.beginPath();
+    ctx.moveTo(RIM_L[0], RIM_L[1]);
+    for (let i = N + 2; i < POLY.length; i++) ctx.lineTo(POLY[i][0], POLY[i][1]);
+    for (let i = 0; i <= N; i++) ctx.lineTo(POLY[i][0], POLY[i][1]);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,246,230,0.20)'; ctx.lineWidth = 0.024; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.38)'; ctx.lineWidth = 0.004; ctx.stroke();
+
+    // Heavy base.
+    const bw = halfW(0);
+    ctx.beginPath();
+    ctx.moveTo(-bw - 0.008, 0.002);
+    ctx.lineTo(bw + 0.008, 0.002);
+    ctx.lineTo(bw + 0.02, 0.07);
+    ctx.quadraticCurveTo(bw + 0.022, 0.078, bw + 0.012, 0.078);
+    ctx.lineTo(-bw - 0.012, 0.078);
+    ctx.quadraticCurveTo(-bw - 0.022, 0.078, -bw - 0.02, 0.07);
+    ctx.closePath();
+    const bg = ctx.createLinearGradient(0, 0, 0, 0.078);
+    bg.addColorStop(0, 'rgba(255,240,220,0.10)'); bg.addColorStop(1, 'rgba(255,240,220,0.24)');
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,246,230,0.22)'; ctx.lineWidth = 0.004; ctx.stroke();
+
+    // Pour stream off the low lip.
+    if (S.streamW > 0.002) {
+      const lip = dot(RIM_R, g) >= dot(RIM_L, g) ? RIM_R : RIM_L;
+      const side = lip === RIM_R ? 1 : -1;
+      const sx = lip[0] + side * 0.012, sy = lip[1];
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo(sx + g[0] * 0.15 + side * 0.04, sy + g[1] * 0.15, sx + g[0] * 4, sy + g[1] * 4);
+      ctx.strokeStyle = '#1b0d08'; ctx.lineWidth = S.streamW; ctx.lineCap = 'round'; ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,48,24,0.55)'; ctx.lineWidth = S.streamW * 0.35; ctx.stroke();
+    }
+
+    // Result: where the middle of the G is, and where the line landed.
+    if (S.phase === 'result' && S.result) {
+      const w = halfW(G_MID) + 0.07;
+      ctx.setLineDash([0.018, 0.012]);
+      ctx.strokeStyle = 'rgba(226,191,111,0.95)'; ctx.lineWidth = 0.005;
+      ctx.beginPath(); ctx.moveTo(-w, -G_MID); ctx.lineTo(w, -G_MID); ctx.stroke();
+      ctx.setLineDash([]);
+      const y = S.result.ys, w2 = halfW(-y) + 0.07;
+      ctx.strokeStyle = 'rgba(241,228,198,0.95)'; ctx.lineWidth = 0.004;
+      ctx.beginPath(); ctx.moveTo(w2 - 0.05, y); ctx.lineTo(w2, y); ctx.moveTo(-w2, y); ctx.lineTo(-w2 + 0.05, y); ctx.stroke();
+      ctx.save(); ctx.scale(1 / Hg, 1 / Hg);
+      ctx.font = `600 ${Math.max(11, Math.round(Hg * 0.03))}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+      ctx.fillStyle = 'rgba(226,191,111,0.95)';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText('MID-G', -w * Hg, -G_MID * Hg - 4);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    step(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
