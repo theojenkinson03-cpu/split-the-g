@@ -45,10 +45,12 @@ body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-#scene { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+/* Wrapper stays locked to the phone: if the screen auto-rotates mid-sip, script counter-rotates it. */
+#app { position: fixed; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; transform-origin: 50% 50%; }
+#scene { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
 
 .hud {
-  position: fixed; inset: 0 0 auto;
+  position: absolute; inset: 0 0 auto;
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   padding-top: calc(14px + env(safe-area-inset-top, 0px));
   padding-left: max(16px, env(safe-area-inset-left, 0px));
@@ -64,7 +66,7 @@ body {
 .hud .tally { font-variant-numeric: tabular-nums; }
 
 .panel {
-  position: fixed; inset: auto 0 0;
+  position: absolute; inset: auto 0 0;
   display: flex; flex-direction: column; gap: 14px;
   padding-top: 44px;
   padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
@@ -157,6 +159,7 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
 </style>
 </head>
 <body>
+<div id="app">
 <canvas id="scene" aria-label="A pint of stout with a G on the glass"></canvas>
 
 <header class="hud">
@@ -204,15 +207,21 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
 
   <p id="status" class="status" hidden></p>
 </section>
+</div>
 
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const cv = $('scene'), ctx = cv.getContext('2d');
+  const app = $('app'), cv = $('scene'), ctx = cv.getContext('2d');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const norm3 = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
 
-  // ---------- Glass geometry: units of interior height, y down, origin at inner base centre ----------
-  // [height fraction, half width] for a tulip pint: narrow foot, swelling belly, slight lip.
+  // ---------- The glass ----------
+  // A solid of revolution, in units of its inside height: y runs down the glass (rim at -1, inner base at 0),
+  // x to the right and z out of the screen toward you.
+  // [height fraction, radius] for a tulip pint: narrow foot, swelling belly, slight lip.
   const PROFILE = [[0, .19], [.15, .2], [.4, .226], [.65, .262], [.82, .282], [.93, .278], [1, .268]];
   function halfW(t) {
     let i = 0;
@@ -222,51 +231,112 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     const u = (t - PROFILE[i][0]) / (PROFILE[i + 1][0] - PROFILE[i][0]);
     return 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u);
   }
-  const N = 36, POLY = [];
-  for (let i = 0; i <= N; i++) POLY.push([halfW(i / N), -i / N]);
-  for (let i = N; i >= 0; i--) POLY.push([-halfW(i / N), -i / N]);
-  const RIM_R = POLY[N], RIM_L = POLY[N + 1];
+  const RT = new Float64Array(257);
+  for (let i = 0; i <= 256; i++) RT[i] = halfW(i / 256);
+  function rAt(t) {               // radius at height fraction t (0 = base, 1 = rim)
+    const f = clamp(t, 0, 1) * 256, i = Math.min(255, f | 0);
+    return RT[i] + (RT[i + 1] - RT[i]) * (f - i);
+  }
+  const R_RIM = rAt(1), R_BASE = rAt(0), FOOT = 0.078, FOOT_R = R_BASE + 0.022;
 
-  const dot = (p, g) => p[0] * g[0] + p[1] * g[1];
-  function area(p) {
-    let s = 0;
-    for (let i = 0, n = p.length; i < n; i++) {
-      const a = p[i], b = p[(i + 1) % n];
-      s += a[0] * b[1] - b[0] * a[1];
-    }
-    return Math.abs(s) / 2;
-  }
-  // Part of the glass on the gravity side of the line dot(p, g) = d.
-  function clip(poly, g, d) {
-    const out = [];
-    for (let i = 0, n = poly.length; i < n; i++) {
-      const a = poly[i], b = poly[(i + 1) % n];
-      const da = dot(a, g) - d, db = dot(b, g) - d;
-      if (da >= 0) out.push(a);
-      if ((da >= 0) !== (db >= 0)) {
-        const t = da / (da - db);
-        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-      }
-    }
-    return out;
-  }
-  const A0 = area(POLY);
-  // Surface offset that holds volume V when gravity points along g.
-  function levelFor(V, g) {
-    let lo = Infinity, hi = -Infinity;
-    for (const p of POLY) { const k = dot(p, g); if (k < lo) lo = k; if (k > hi) hi = k; }
-    if (V >= A0) return lo;
-    if (V <= 0) return hi;
-    for (let i = 0; i < 30; i++) {
-      const mid = (lo + hi) / 2;
-      if (area(clip(POLY, g, mid)) > V) lo = mid; else hi = mid;
-    }
-    return (lo + hi) / 2;
-  }
+  // We look down on the glass a touch, so the rim and the surface read as ellipses.
+  const ELEV = 0.24, CE = Math.cos(ELEV), SE = Math.sin(ELEV);
+  const pj = (x, y, z) => [x, y * CE + z * SE];
 
   // The G: centre height and letter height, as fractions of the glass. 150 mm is a pint glass's inside height.
   const G_MID = 0.6, G_H = 0.11, GLASS_MM = 150;
-  const UP = [0, 1];
+  const GRAV = 9.81 / 0.15;       // gravity in glass heights per second²
+  const UP = [0, 1, 0];
+
+  // ---------- Liquid volume ----------
+  const M = 72, DY = 1 / M, SL_Y = [], SL_R = [];
+  for (let i = 0; i < M; i++) { const t = (i + 0.5) / M; SL_Y.push(-t); SL_R.push(rAt(t)); }
+  const V0 = SL_R.reduce((v, r) => v + Math.PI * r * r * DY, 0);
+
+  // Area of a disc of radius r beyond a chord at signed distance c from the centre.
+  function segArea(c, r) {
+    if (c <= -r) return Math.PI * r * r;
+    if (c >= r) return 0;
+    return r * r * Math.acos(c / r) - c * Math.sqrt(r * r - c * c);
+  }
+  // Integral of segArea over c, so each slice can be averaged exactly across its thickness.
+  function segAreaInt(c, r) {
+    if (c <= -r) return Math.PI * r * r * c;
+    if (c >= r) return 0;
+    const q = r * r - c * c;
+    return r * r * (c * Math.acos(c / r) - Math.sqrt(q)) + q * Math.sqrt(q) / 3;
+  }
+  const tiltS = n => Math.hypot(n[0], n[2]);
+  // Volume of the glass on the gravity side of the plane n·p = d, summed slice by slice.
+  function vol(d, n) {
+    const s = tiltS(n), half = DY / 2;
+    let v = 0;
+    for (let i = 0; i < M; i++) {
+      const r = SL_R[i], y0 = SL_Y[i] - half, y1 = SL_Y[i] + half;
+      if (s < 1e-9) {
+        // Level surface: the share of this slice below it.
+        const a = n[1] > 0 ? (y1 - d / n[1]) / DY : (d / n[1] - y0) / DY;
+        v += Math.PI * r * r * clamp(n[1] === 0 ? (d <= 0 ? 1 : 0) : a, 0, 1);
+        continue;
+      }
+      const c0 = (d - n[1] * y0) / s, c1 = (d - n[1] * y1) / s;
+      v += Math.abs(c0 - c1) > 1e-9
+        ? (segAreaInt(c0, r) - segAreaInt(c1, r)) / (c0 - c1)
+        : segArea(c0, r);
+    }
+    return v * DY;
+  }
+  // Surface offset d that holds volume V with gravity along n.
+  function levelFor(V, n) {
+    const s = tiltS(n);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i <= 16; i++) {
+      const t = i / 16, a = -n[1] * t, r = rAt(t) * s;
+      lo = Math.min(lo, a - r); hi = Math.max(hi, a + r);
+    }
+    if (V >= V0) return lo;
+    if (V <= 0) return hi;
+    for (let i = 0; i < 32; i++) {
+      const mid = (lo + hi) / 2;
+      if (vol(mid, n) > V) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+  // n·p at the lowest point of the rim.
+  const lipDot = n => tiltS(n) * R_RIM - n[1];
+
+  // Flow over the lip behaves like a weir: Q grows with the depth h of liquid above the lip
+  // and with how much of the rim is wetted.
+  const K_WEIR = 45;
+  function weir(h, s) {
+    if (h <= 0) return 0;
+    const c = s > 1e-6 ? 1 - h / (s * R_RIM) : -1;
+    return K_WEIR * 2 * R_RIM * Math.acos(clamp(c, -1, 1)) * h ** 1.5;
+  }
+
+  // Height where the plane n·p = d meets the wall at angle phi round the glass (held to the rim or the base).
+  function wallY(phi, n, d) {
+    const k = n[0] * Math.cos(phi) + n[2] * Math.sin(phi);
+    const f = y => rAt(-y) * k + n[1] * y - d;
+    const fTop = f(-1), fBot = f(0);
+    if (fTop >= 0 && fBot >= 0) return -1;
+    if (fTop < 0 && fBot < 0) return 0;
+    let a = -1, b = 0;
+    for (let i = 0; i < 18; i++) {
+      const m = (a + b) / 2;
+      if ((f(m) >= 0) === (fTop >= 0)) a = m; else b = m;
+    }
+    return (a + b) / 2;
+  }
+  const NPHI = 64;
+  function ring(n, d) {
+    const pts = [];
+    for (let i = 0; i <= NPHI; i++) {
+      const phi = (i / NPHI) * TAU, y = wallY(phi, n, d), r = rAt(-y);
+      pts.push(pj(r * Math.cos(phi), y, r * Math.sin(phi)));
+    }
+    return { pts, yR: wallY(0, n, d), yL: wallY(Math.PI, n, d) };
+  }
 
   // ---------- State ----------
   const store = {
@@ -274,20 +344,20 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     set(k, v) { try { localStorage.setItem(k, v); } catch {} }
   };
   const MODES = {
-    beer: { line: 'The stout line', short: 'stout line' },
-    foam: { line: 'The top of the head', short: 'head' }
+    beer: { line: 'The stout line' },
+    foam: { line: 'The top of the head' }
   };
   const S = {
     phase: 'title', phaseT: 0,
     mode: store.get('stg-mode') === 'foam' ? 'foam' : 'beer',
-    Vs: 0, Vh: 0, drank: 0,
-    // Gravity as seen by the glass (x right, y down the glass, z out of the screen), smoothed on a spring.
-    g: [0, 1, 0], gv: [0, 0, 0],
+    Vs: 0, Vh: 0, drank: 0, headTop0: 0.93, stoutTop0: 0.85,
+    // Gravity as the liquid feels it, in glass axes; it follows the phone on a damped spring, which is the slosh.
+    g: [0, 1, 0], gv: [0, 0, 0], gt: [0, 1, 0], n: [0, 1, 0],
     glassRot: 0, dragTarget: 0,
-    flow: 0, streamW: 0, quietT: 0, uprightT: 0, armed: false,
+    flow: 0, lipH: 0, quietT: 0, uprightT: 0, armed: false,
+    streams: [], drops: [], drips: 0, dripT: 0, lastLip: null,
     surge: 1, particles: [],
     result: null, hg: 0,
-    pints: 0,
     best: {
       beer: Number(store.get('stg-best-beer') || store.get('stg-best')) || 0,
       foam: Number(store.get('stg-best-foam')) || 0
@@ -296,37 +366,48 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
   function fillPint() {
     const stoutTop = 0.83 + Math.random() * 0.04;
     const headTop = Math.min(0.955, stoutTop + 0.075 + Math.random() * 0.025);
-    S.Vs = area(clip(POLY, UP, -stoutTop));
-    S.Vh = area(clip(POLY, UP, -headTop)) - S.Vs;
-    S.drank = 0;
+    S.Vs = vol(-stoutTop, UP);
+    S.Vh = vol(-headTop, UP) - S.Vs;
+    S.headTop0 = headTop; S.stoutTop0 = stoutTop;
+    S.drank = 0; S.streams = []; S.drops = []; S.drips = 0; S.lastLip = null;
   }
   fillPint();
 
-  // ---------- Input: motion sensor first, drag only where there is no sensor ----------
-  let sensorActive = false, sensorDenied = false, sensorG = [0, 1, 0];
+  // ---------- Input: the motion sensor, with drag only where there is no sensor ----------
+  let sensorActive = false, sensorDenied = false;
+  const gOri = [0, 1, 0];          // gravity from the orientation sensor, phone axes (x right, y down, z toward you)
+  const aLin = [0, 0, 0];          // the phone's own acceleration (m/s²), so a jolt sloshes the pint
+  let motionSign = 0;
   let dragging = false, dragStartX = 0, keyDir = 0, W = 0, H = 0, DPR = 1;
 
   function onOrient(e) {
     if (e.beta == null || e.gamma == null) return;
     const b = e.beta * Math.PI / 180, c = e.gamma * Math.PI / 180;
-    // Gravity in device axes, flipped to screen convention (y down): x right, y down, z toward the viewer.
-    let gx = Math.sin(c) * Math.cos(b), gy = Math.sin(b);
-    const gz = -Math.cos(b) * Math.cos(c);
-    const ang = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180;
-    if (ang) { const x = gx * Math.cos(ang) - gy * Math.sin(ang); gy = gx * Math.sin(ang) + gy * Math.cos(ang); gx = x; }
+    gOri[0] = Math.sin(c) * Math.cos(b);
+    gOri[1] = Math.sin(b);
+    gOri[2] = -Math.cos(b) * Math.cos(c);
     sensorActive = true;
-    sensorG = [gx, gy, gz];
+  }
+  function onMotion(e) {
+    const a = e.accelerationIncludingGravity;
+    if (!sensorActive || !a || a.x == null) return;
+    const m = [a.x, -a.y, a.z];
+    // At rest this reads about -9.8 along gravity; some browsers flip the sign, so learn it.
+    const along = m[0] * gOri[0] + m[1] * gOri[1] + m[2] * gOri[2];
+    if (Math.abs(along) > 5) motionSign += (-Math.sign(along) - motionSign) * 0.05;
+    if (Math.abs(motionSign) < 0.6) return;
+    const sg = Math.sign(motionSign);
+    for (let i = 0; i < 3; i++) aLin[i] += (sg * m[i] + 9.81 * gOri[i] - aLin[i]) * 0.3;
   }
 
-  const noSensor = () => !sensorActive;
   cv.addEventListener('pointerdown', e => {
-    if (!noSensor()) return;
+    if (sensorActive) return;
     dragging = true; dragStartX = e.clientX;
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e => {
     if (!dragging) return;
-    S.dragTarget = Math.max(-2.4, Math.min(2.4, (e.clientX - dragStartX) * 2.8 / Math.max(W, 320)));
+    S.dragTarget = clamp((e.clientX - dragStartX) * 2.8 / Math.max(W, 320), -2.4, 2.4);
   });
   const endDrag = () => { dragging = false; S.dragTarget = 0; };
   cv.addEventListener('pointerup', endDrag);
@@ -341,15 +422,16 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
 
   // Must start inside the tap handler: iOS only shows the motion prompt from a user gesture.
   function enableSensors() {
-    let ask = Promise.resolve('granted');
+    const asks = [];
     try {
-      if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        ask = DeviceOrientationEvent.requestPermission();
-      }
+      if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') asks.push(DeviceOrientationEvent.requestPermission());
+      if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') asks.push(DeviceMotionEvent.requestPermission());
     } catch {}
-    return ask.catch(() => 'denied').then(res => {
-      if (res !== 'granted') sensorDenied = true;
+    return Promise.all(asks.map(p => p.catch(() => 'denied'))).then(res => {
+      // Only phones and tablets have a sensor worth asking about; desktops answer 'denied' too.
+      if (res[0] && res[0] !== 'granted' && matchMedia('(pointer: coarse)').matches) sensorDenied = true;
       addEventListener('deviceorientation', onOrient);
+      addEventListener('devicemotion', onMotion);
       keepAwake();
       try { screen.orientation?.lock?.('portrait').catch(() => {}); } catch {}
     });
@@ -396,9 +478,9 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     if (p === 'settle') {
       fillPint();
       S.surge = 0; S.result = null; S.quietT = 0; S.uprightT = 0; S.armed = false;
-      S.particles = Array.from({ length: 170 }, () => ({
-        x: (Math.random() - 0.5) * 0.5, y: -0.04 - Math.random() * 0.8,
-        r: 0.002 + Math.random() * 0.003, v: 0.03 + Math.random() * 0.06
+      S.particles = Array.from({ length: 150 }, () => ({
+        x: (Math.random() - 0.5) * 0.44, y: -0.04 - Math.random() * 0.78,
+        r: 0.0018 + Math.random() * 0.0028, v: 0.03 + Math.random() * 0.06
       }));
       show('play');
       setStatus('Letting it settle…', 'A perfect pour takes 119.5 seconds. We’ll give you three.');
@@ -418,7 +500,7 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     }
     if (!S.armed) return ['Stand your phone upright', 'Hold it straight up like a full pint.'];
     const target = S.mode === 'beer' ? 'the stout line' : 'the top of the head';
-    return ['Tip it to drink', `One sip. Stand it back up when ${target} hits the middle of the G.`];
+    return ['Tip it sideways to drink', `One sip. Stand it back up when ${target} hits the middle of the G.`];
   }
 
   function showResult() {
@@ -426,7 +508,7 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     const err = -ys - G_MID;            // >0: line sits above the middle of the G
     const mm = err * GLASS_MM, a = Math.abs(mm), half = G_H * GLASS_MM / 2;
     const line = MODES[S.mode].line;
-    const empty = S.Vs + (S.mode === 'foam' ? S.Vh : 0) < 0.03 * A0;
+    const empty = S.Vs + (S.mode === 'foam' ? S.Vh : 0) < 0.03 * V0;
     let v, sub;
     if (empty) { v = 'Necked it.'; sub = 'That’s not splitting the G. That’s finishing the pint.'; }
     else if (a <= 1.5) { v = 'Split it.'; sub = `${line} runs straight through the middle of the G. The barman nods.`; }
@@ -435,7 +517,6 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     else if (mm > 0) { v = 'Missed the G.'; sub = `${line} never got down to the G. Get stuck in.`; }
     else { v = 'Gone past it.'; sub = `${line} sank straight through the G.`; }
     const score = empty ? 0 : Math.round(100 * Math.exp(-((a / 5) ** 2)));
-    S.pints++;
     const newBest = score > S.best[S.mode];
     if (newBest) { S.best[S.mode] = score; store.set('stg-best-' + S.mode, String(score)); }
     S.result = { ys, score };
@@ -465,45 +546,101 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
   });
 
   // ---------- Simulation ----------
-  const norm3 = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+  // One implicit step of flow over the lip, so a hard tip gushes and a gentle one trickles without jitter.
+  // Liquid above the lip is a thin sheet at the edge, not a slab across the whole mouth, so it only holds
+  // a fraction of what the tilted plane would.
+  const SHEET = 0.25;
+  function pourStep(dt, n) {
+    const V = S.Vs + S.Vh, s = tiltS(n), L = lipDot(n), cap = vol(L, n);
+    const E = V - cap;
+    if (E <= 0) { S.lipH = 0; return 0; }
+    const mound = h => SHEET * (vol(L - h, n) - cap);
+    let hi = 0.01;
+    while (mound(hi) < E && hi < 2) hi *= 2;
+    let lo = 0;
+    for (let i = 0; i < 26; i++) {
+      const mid = (lo + hi) / 2;
+      if (mound(mid) - E + weir(mid, s) * dt > 0) hi = mid; else lo = mid;
+    }
+    const h = (lo + hi) / 2;
+    S.lipH = h;
+    return Math.max(0, E - mound(h));
+  }
+
+  const onStage = p => Math.abs(p[0]) < 3 && p[1] < 3.2 && p[1] > -4 && Math.abs(p[2]) < 3;
+  function updateStream(dt, n) {
+    const s = tiltS(n), ux = s > 1e-4 ? n[0] / s : 0, uz = s > 1e-4 ? n[2] / s : 0;
+    const lip = [(R_RIM + 0.008) * ux, -1.002, (R_RIM + 0.008) * uz];
+    let seg = S.streams.find(g => g.live);
+    if (S.flow > 0.0005) {
+      if (!seg) { seg = { pts: [], live: true, behind: uz < -0.45 }; S.streams.push(seg); }
+      seg.lip = lip;
+      const v0 = Math.sqrt(2 * GRAV * Math.max(S.lipH, 0.002)) * 0.7;
+      seg.pts.unshift({ p: lip.slice(), v: [ux * v0 + n[0] * 0.4, n[1] * 0.4, uz * v0 + n[2] * 0.4], q: S.flow });
+      S.lastLip = { lip, ux, uz, behind: seg.behind };
+    } else if (seg) {
+      seg.live = false;
+      S.drips = 2 + (Math.random() * 3 | 0); S.dripT = -0.15;
+    }
+    // A few drops run off the lip after the pour stops.
+    if (S.drips > 0 && S.lastLip) {
+      S.dripT += dt;
+      if (S.dripT > 0.1) {
+        S.dripT = -Math.random() * 0.35; S.drips--;
+        const L = S.lastLip;
+        S.drops.push({ p: L.lip.slice(), v: [L.ux * 0.15, 0, L.uz * 0.15], r: 0.005 + Math.random() * 0.006, behind: L.behind });
+      }
+    }
+    const ax = n[0] * GRAV, ay = n[1] * GRAV, az = n[2] * GRAV;
+    const move = q => { q.v[0] += ax * dt; q.v[1] += ay * dt; q.v[2] += az * dt; q.p[0] += q.v[0] * dt; q.p[1] += q.v[1] * dt; q.p[2] += q.v[2] * dt; };
+    for (const g of S.streams) { for (const q of g.pts) move(q); g.pts = g.pts.filter(q => onStage(q.p)); }
+    S.streams = S.streams.filter(g => g.live || g.pts.length > 1);
+    for (const q of S.drops) move(q);
+    S.drops = S.drops.filter(q => onStage(q.p));
+  }
 
   function step(dt) {
     S.phaseT += dt;
     const live = S.phase === 'ready' || S.phase === 'drinking';
-    if (keyDir && live && noSensor()) S.dragTarget = Math.max(-2.4, Math.min(2.4, S.dragTarget + keyDir * 1.3 * dt));
+    if (keyDir && live && !sensorActive) S.dragTarget = clamp(S.dragTarget + keyDir * 1.3 * dt, -2.4, 2.4);
 
-    const rotTarget = live && noSensor() ? S.dragTarget : 0;
+    const rotTarget = live && !sensorActive ? S.dragTarget : 0;
     S.glassRot += (rotTarget - S.glassRot) * (1 - Math.exp(-dt * (dragging ? 18 : 6)));
 
-    let target = [0, 1, 0];
-    if (live) target = sensorActive ? norm3(sensorG) : [Math.sin(S.glassRot), Math.cos(S.glassRot), 0];
-
-    // Liquid lags the glass on a damped spring, which gives the slosh.
-    const k = 70, c = reduced ? 22 : 10, h = dt / 4;
-    for (let s = 0; s < 4; s++) for (let i = 0; i < 3; i++) {
-      S.gv[i] += (k * (target[i] - S.g[i]) - c * S.gv[i]) * h;
+    // Where gravity points as the liquid feels it: the phone's tilt, less any jolt of the phone itself.
+    let target = UP;
+    if (live) {
+      if (sensorActive) {
+        const am = Math.hypot(aLin[0], aLin[1], aLin[2]);
+        const k = am > 0.4 ? Math.min(am, 5) / am * 0.6 : 0;
+        target = norm3([9.81 * gOri[0] - aLin[0] * k, 9.81 * gOri[1] - aLin[1] * k, 9.81 * gOri[2] - aLin[2] * k]);
+      } else {
+        target = [Math.sin(S.glassRot), Math.cos(S.glassRot), 0];
+      }
+    }
+    const f = 1 - Math.exp(-dt / 0.035);
+    for (let i = 0; i < 3; i++) S.gt[i] += (target[i] - S.gt[i]) * f;
+    const k = 170, c = reduced ? 26 : 9, sub = 6, h = dt / sub;
+    for (let s = 0; s < sub; s++) for (let i = 0; i < 3; i++) {
+      S.gv[i] += (k * (S.gt[i] - S.g[i]) - c * S.gv[i]) * h;
       S.g[i] += S.gv[i] * h;
     }
+    const n = S.n = norm3(S.g);
+    const tilt = Math.acos(clamp(n[1], -1, 1));
+    const targetTilt = Math.acos(clamp(norm3(S.gt)[1], -1, 1));
 
-    const n = norm3(S.g), tilt = Math.acos(Math.max(-1, Math.min(1, n[1])));
-    const tg = norm3(target), targetTilt = Math.acos(Math.max(-1, Math.min(1, tg[1])));
-
-    // Wait for the glass to be stood upright before the sip can start.
+    // The sip can only start once the glass has been stood upright.
     if (S.phase === 'ready' && !S.armed) {
       S.uprightT = targetTilt < 0.3 ? S.uprightT + dt : 0;
       if (S.uprightT > 0.35) S.armed = true;
     }
 
-    // Pour whatever is above the low point of the rim (worked in the plane the glass is tipping in).
     S.flow = 0;
     if (live && S.armed) {
-      const g2 = [Math.sin(tilt), Math.cos(tilt)];
-      const Vmax = area(clip(POLY, g2, dot(RIM_R, g2)));
-      const V = S.Vs + S.Vh;
-      if (V > Vmax) {
-        const out = Math.min(V - Vmax, dt * Math.min(3 * (V - Vmax), 0.25 * A0));
+      const out = pourStep(dt, n);
+      if (out > 0) {
         // You drink through the head: mostly stout goes, the head thins slowly.
-        let fromHead = S.Vh > 0.012 * A0 ? out * 0.15 : 0;
+        let fromHead = S.Vh > 0.012 * V0 ? out * 0.15 : 0;
         let fromStout = out - fromHead;
         if (fromStout > S.Vs) { fromHead += fromStout - S.Vs; fromStout = S.Vs; }
         S.Vs -= fromStout;
@@ -511,96 +648,241 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
         S.drank += out;
         S.flow = out / dt;
       }
-    }
-    S.streamW += (Math.sqrt(S.flow / A0) * 0.11 - S.streamW) * (1 - Math.exp(-dt * 14));
+    } else S.lipH = 0;
+    updateStream(dt, n);
 
     if (S.phase === 'settle') {
-      S.surge = Math.min(1, S.phaseT / 3);
+      S.surge = Math.min(1, S.phaseT / 3.2);
       for (const p of S.particles) { p.y += p.v * dt; p.x += Math.sin((p.y + p.v) * 40) * 0.004 * dt; }
-      if (S.phaseT > 3) setPhase('ready');
+      if (S.phaseT > 3.2) setPhase('ready');
     } else if (S.phase === 'ready') {
-      if (S.drank > 0.004 * A0) setPhase('drinking');
+      if (S.drank > 0.004 * V0) setPhase('drinking');
     } else if (S.phase === 'drinking') {
-      if (tilt < 0.25 && S.flow < 1e-4 && !dragging && !keyDir) S.quietT += dt; else S.quietT = 0;
-      if (S.quietT > 0.6 || S.Vs + S.Vh < 0.002 * A0) setPhase('resolve');
+      if (tilt < 0.25 && S.flow < 1e-5 && !dragging && !keyDir) S.quietT += dt; else S.quietT = 0;
+      if (S.quietT > 0.6 || S.Vs + S.Vh < 0.002 * V0) setPhase('resolve');
     } else if (S.phase === 'resolve') {
       if (S.phaseT > 1.1) setPhase('result');
     }
     if (live) setStatus(...playHint());
   }
 
-  // ---------- Rendering ----------
+  // ---------- Keep the scene fixed to the phone if the screen auto-rotates ----------
+  function lockToDevice() {
+    const raw = screen.orientation && typeof screen.orientation.angle === 'number' ? screen.orientation.angle : (window.orientation || 0);
+    const a = ((raw % 360) + 360) % 360;
+    const iw = innerWidth, ih = innerHeight;
+    if ((a === 90 || a === 270) && matchMedia('(pointer: coarse)').matches) {
+      app.style.width = ih + 'px'; app.style.height = iw + 'px';
+      app.style.transform = `translate(${(iw - ih) / 2}px, ${(ih - iw) / 2}px) rotate(${-a}deg)`;
+    } else {
+      app.style.width = ''; app.style.height = ''; app.style.transform = '';
+    }
+  }
+
   function resize() {
+    lockToDevice();
     DPR = Math.min(devicePixelRatio || 1, 2.5);
-    W = innerWidth; H = innerHeight;
+    W = app.clientWidth; H = app.clientHeight;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     panelH = $('panel').offsetHeight;
   }
   addEventListener('resize', resize);
+  addEventListener('orientationchange', () => setTimeout(resize, 50));
+  screen.orientation?.addEventListener?.('change', resize);
   resize();
   document.fonts?.ready.then(() => { panelH = $('panel').offsetHeight; });
 
-  function polyPath(p) {
-    ctx.beginPath();
-    ctx.moveTo(p[0][0], p[0][1]);
-    for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]);
-    ctx.closePath();
-  }
+  // ---------- Rendering ----------
   const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
   const rgb = a => `rgb(${a[0]},${a[1]},${a[2]})`;
 
-  function layout(dt) {
-    const top = 56, bottom = H - panelH + 30;
-    const avail = Math.max(140, bottom - top);
-    const target = Math.min(avail * 0.86, (W * 0.64) / 0.6);
-    S.hg = S.hg ? S.hg + (target - S.hg) * (1 - Math.exp(-dt * 8)) : target;
-    const Hg = S.hg;
-    return { Hg, cx: W / 2, baseY: top + avail / 2 + Hg * 0.5 - Hg * 0.035 };
+  function wallTo(side, y0, y1) {
+    for (let k = 1; k <= 12; k++) { const y = y0 + (y1 - y0) * k / 12; ctx.lineTo(side * rAt(-y), y * CE); }
+  }
+  function frontArc(r, y, fromRight, steps = 24) {   // the half of a ring that faces you
+    for (let j = 0; j <= steps; j++) {
+      const a = fromRight ? (j / steps) * Math.PI : Math.PI - (j / steps) * Math.PI;
+      const p = pj(r * Math.cos(a), y, r * Math.sin(a));
+      ctx.lineTo(p[0], p[1]);
+    }
+  }
+  function backArc(r, y, fromRight, steps = 24) {
+    for (let j = 0; j <= steps; j++) {
+      const a = fromRight ? (j / steps) * Math.PI : Math.PI - (j / steps) * Math.PI;
+      const p = pj(r * Math.cos(a), y, -r * Math.sin(a));
+      ctx.lineTo(p[0], p[1]);
+    }
+  }
+  // Outline of the glass, or of its lower part up to height t.
+  function silhouettePath(t = 1) {
+    ctx.beginPath();
+    ctx.moveTo(R_BASE, 0);
+    wallTo(1, 0, -t);
+    backArc(rAt(t), -t, true);
+    wallTo(-1, -t, 0);
+    frontArc(R_BASE, 0, false);
+    ctx.closePath();
+  }
+  // The part of a liquid you see from the front: walls, the front of its surface, and the base.
+  function bodyPath(rg) {
+    ctx.beginPath();
+    ctx.moveTo(rg.pts[0][0], rg.pts[0][1]);
+    for (let i = 1; i <= NPHI / 2; i++) ctx.lineTo(rg.pts[i][0], rg.pts[i][1]);
+    wallTo(-1, rg.yL, 0);
+    frontArc(R_BASE, 0, false, 16);
+    wallTo(1, 0, rg.yR);
+    ctx.closePath();
+  }
+  function facePath(rg) {
+    ctx.beginPath();
+    ctx.moveTo(rg.pts[0][0], rg.pts[0][1]);
+    for (let i = 1; i <= NPHI; i++) ctx.lineTo(rg.pts[i][0], rg.pts[i][1]);
+    ctx.closePath();
+  }
+  function frontEdge(rg) {
+    ctx.beginPath();
+    ctx.moveTo(rg.pts[0][0], rg.pts[0][1]);
+    for (let i = 1; i <= NPHI / 2; i++) ctx.lineTo(rg.pts[i][0], rg.pts[i][1]);
   }
 
-  function drawStream(sx, sy, dir, behind) {
-    ctx.save();
-    if (behind) {
-      // Falling behind the glass: only show it where the glass doesn't cover it.
-      ctx.beginPath();
-      ctx.rect(-10, -10, 20, 20);
-      for (let i = 0; i < POLY.length; i++) ctx.lineTo(POLY[i][0] * 1.08, POLY[i][1] - (POLY[i][1] < -0.99 ? 0.06 : 0.02));
-      ctx.closePath();
-      const bw = halfW(0) + 0.03;
-      ctx.rect(-bw, -0.01, bw * 2, 0.1);
-      ctx.clip('evenodd');
+  // Fine bubbles for the head, drawn in screen pixels.
+  let foamPat = null, foamPatDPR = 0;
+  function foamPattern() {
+    if (foamPat && foamPatDPR === DPR) return foamPat;
+    const c = document.createElement('canvas'), sz = Math.round(150 * DPR);
+    c.width = c.height = sz;
+    const x = c.getContext('2d');
+    for (let i = 0; i < 520; i++) {
+      const r = (0.45 + Math.random() ** 2.2 * 2.2) * DPR, X = Math.random() * sz, Y = Math.random() * sz;
+      const a = 0.18 + Math.random() * 0.3;
+      for (const dx of [-sz, 0, sz]) for (const dy of [-sz, 0, sz]) {
+        x.beginPath(); x.arc(X + dx, Y + dy, r, 0, TAU);
+        x.fillStyle = `rgba(255,252,242,${a})`; x.fill();
+        x.lineWidth = 0.6 * DPR; x.strokeStyle = 'rgba(140,108,72,0.18)'; x.stroke();
+      }
     }
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(sx + dir[0] * 0.15, sy + dir[1] * 0.15, sx + dir[0] * 4, sy + dir[1] * 4);
-    ctx.strokeStyle = '#1b0d08'; ctx.lineWidth = S.streamW; ctx.lineCap = 'round'; ctx.stroke();
-    ctx.strokeStyle = 'rgba(120,48,24,0.55)'; ctx.lineWidth = S.streamW * 0.35; ctx.stroke();
+    foamPat = ctx.createPattern(c, 'repeat'); foamPatDPR = DPR;
+    return foamPat;
+  }
+  // Bubble texture over a path, painted only across that path's box (x0, y0, x1, y1 in glass units).
+  function texture(pathFn, alpha, box) {
+    ctx.save(); pathFn(); ctx.clip();
+    const t = ctx.getTransform();
+    const xs = [], ys = [];
+    for (const [x, y] of [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]]) {
+      xs.push(t.a * x + t.c * y + t.e); ys.push(t.b * x + t.d * y + t.f);
+    }
+    const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)));
+    const x1 = Math.min(cv.width, Math.ceil(Math.max(...xs))), y1 = Math.min(cv.height, Math.ceil(Math.max(...ys)));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = alpha; ctx.fillStyle = foamPattern();
+    if (x1 > x0 && y1 > y0) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.setTransform(t);
     ctx.restore();
+  }
+  function ringBox(rg, toBase) {
+    let y0 = Infinity, y1 = -Infinity;
+    for (const p of rg.pts) { y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    return [-R_RIM - 0.02, y0 - 0.01, R_RIM + 0.02, (toBase ? R_BASE * SE : y1) + 0.01];
+  }
+
+  // A pouring stream: a ribbon whose width follows the flow and thins as it speeds up, lit from above.
+  const streamW = q => clamp(2 * Math.sqrt(q.q / (Math.PI * Math.max(Math.hypot(q.v[0], q.v[1], q.v[2]), 0.5))), 0.004, 0.17);
+  function drawStream(g) {
+    const pts = [];
+    if (g.live && g.lip && g.pts.length) pts.push({ s: pj(...g.lip), w: streamW(g.pts[0]) });
+    for (const q of g.pts) pts.push({ s: pj(q.p[0], q.p[1], q.p[2]), w: streamW(q) });
+    for (let i = pts.length - 1; i > 0; i--) if (Math.hypot(pts[i].s[0] - pts[i - 1].s[0], pts[i].s[1] - pts[i - 1].s[1]) < 1e-4) pts.splice(i, 1);
+    if (pts.length < 2) return;
+    const Lp = [], Rp = [], mid = [];
+    let side = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[Math.max(0, i - 1)].s, b = pts[Math.min(pts.length - 1, i + 1)].s;
+      let tx = b[0] - a[0], ty = b[1] - a[1];
+      const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const nx = -ty, ny = tx, w = pts[i].w / 2, s = pts[i].s;
+      if (!side && Math.abs(ny) > 0.05) side = ny < 0 ? 1 : -1;   // which edge faces the light
+      Lp.push([s[0] + nx * w, s[1] + ny * w]);
+      Rp.push([s[0] - nx * w, s[1] - ny * w]);
+      mid.push([s, nx, ny, w]);
+    }
+    side = side || 1;
+    const smooth = (arr, move) => {
+      if (move) ctx.moveTo(arr[0][0], arr[0][1]); else ctx.lineTo(arr[0][0], arr[0][1]);
+      for (let i = 1; i < arr.length - 1; i++) {
+        ctx.quadraticCurveTo(arr[i][0], arr[i][1], (arr[i][0] + arr[i + 1][0]) / 2, (arr[i][1] + arr[i + 1][1]) / 2);
+      }
+      ctx.lineTo(arr[arr.length - 1][0], arr[arr.length - 1][1]);
+    };
+    ctx.beginPath();
+    smooth(Lp, true);
+    smooth(Rp.slice().reverse(), false);
+    ctx.closePath();
+    ctx.fillStyle = '#120907';
+    ctx.fill();
+    const tail = pts[pts.length - 1];
+    ctx.beginPath(); ctx.arc(tail.s[0], tail.s[1], tail.w / 2, 0, TAU); ctx.fill();
+
+    const line = (off, width, color) => {
+      const arr = mid.map(([s, nx, ny, w]) => [s[0] + nx * w * off * side, s[1] + ny * w * off * side]);
+      ctx.beginPath(); smooth(arr, true);
+      ctx.lineWidth = width; ctx.strokeStyle = color; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    };
+    const avgW = mid.reduce((a, m) => a + m[3] * 2, 0) / mid.length;
+    line(0.05, avgW * 0.42, 'rgba(118,38,17,0.6)');                       // ruby where the light comes through
+    line(0.62, Math.max(0.0028, avgW * 0.1), 'rgba(255,224,180,0.75)');   // glint on the lit edge
+    line(-0.7, Math.max(0.002, avgW * 0.05), 'rgba(255,200,150,0.18)');
+  }
+  function drawDrop(q) {
+    const s = pj(q.p[0], q.p[1], q.p[2]), sp = Math.hypot(q.v[0], q.v[1]) || 1;
+    const stretch = 1 + Math.min(1.6, sp * 0.12);
+    ctx.save();
+    ctx.translate(s[0], s[1]);
+    ctx.rotate(Math.atan2(q.v[1], q.v[0]) - Math.PI / 2);
+    ctx.beginPath(); ctx.ellipse(0, 0, q.r, q.r * stretch, 0, 0, TAU);
+    ctx.fillStyle = '#120907'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-q.r * 0.35, -q.r * 0.2, q.r * 0.28, q.r * 0.45 * stretch, 0, 0, TAU);
+    ctx.fillStyle = 'rgba(255,224,180,0.7)'; ctx.fill();
+    ctx.restore();
+  }
+
+  function layout(dt) {
+    const top = 58, bottom = H - panelH + 26;
+    const avail = Math.max(140, bottom - top);
+    const glassTop = CE + R_RIM * SE, glassBot = FOOT * CE + FOOT_R * SE;
+    const target = Math.min(avail * 0.9 / (glassTop + glassBot), (W * 0.62) / (2 * FOOT_R + 0.2));
+    S.hg = S.hg ? S.hg + (target - S.hg) * (1 - Math.exp(-dt * 8)) : target;
+    const Hg = S.hg;
+    return { Hg, cx: W / 2, baseY: top + (avail - (glassTop + glassBot) * Hg) / 2 + glassTop * Hg };
   }
 
   function draw(dt) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const { Hg, cx, baseY } = layout(dt);
 
-    // Room: dark bar, warm light overhead, a wooden counter.
+    // Room: dark bar, warm light overhead, the bar top the glass stands on.
     ctx.fillStyle = '#120d0a';
     ctx.fillRect(0, 0, W, H);
-    const glow = ctx.createRadialGradient(cx, baseY - Hg * 0.9, 0, cx, baseY - Hg * 0.9, Math.max(W, H) * 0.75);
-    glow.addColorStop(0, 'rgba(201,140,70,0.28)');
-    glow.addColorStop(0.5, 'rgba(90,52,24,0.12)');
+    const glow = ctx.createRadialGradient(cx, baseY - Hg * 0.95, 0, cx, baseY - Hg * 0.95, Math.max(W, H) * 0.75);
+    glow.addColorStop(0, 'rgba(206,146,74,0.32)');
+    glow.addColorStop(0.5, 'rgba(92,54,24,0.13)');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-    const counterY = baseY + Hg * 0.075;
-    const wood = ctx.createLinearGradient(0, counterY, 0, H);
-    wood.addColorStop(0, '#3a2414'); wood.addColorStop(0.08, '#24160d'); wood.addColorStop(1, '#0d0907');
-    ctx.fillStyle = wood; ctx.fillRect(0, counterY, W, H - counterY);
-    ctx.fillStyle = 'rgba(226,191,111,0.18)'; ctx.fillRect(0, counterY, W, 1);
+    const groundY = baseY + FOOT * CE * Hg;
+    const backEdge = groundY - Hg * 0.1, frontEdgeY = groundY + Hg * 0.1;
+    const top = ctx.createLinearGradient(0, backEdge, 0, frontEdgeY);
+    top.addColorStop(0, '#24160d'); top.addColorStop(1, '#3d2716');
+    ctx.fillStyle = top; ctx.fillRect(0, backEdge, W, frontEdgeY - backEdge);
+    const face = ctx.createLinearGradient(0, frontEdgeY, 0, H);
+    face.addColorStop(0, '#1e130b'); face.addColorStop(1, '#0c0806');
+    ctx.fillStyle = face; ctx.fillRect(0, frontEdgeY, W, H - frontEdgeY);
+    ctx.fillStyle = 'rgba(226,191,111,0.2)'; ctx.fillRect(0, frontEdgeY, W, 1);
 
     // Shadow under the glass.
     const lift = Math.min(1, Math.abs(S.glassRot) / 0.6);
-    ctx.fillStyle = `rgba(0,0,0,${0.45 * (1 - lift * 0.7)})`;
+    ctx.fillStyle = `rgba(0,0,0,${0.5 * (1 - lift * 0.7)})`;
     ctx.beginPath();
-    ctx.ellipse(cx, counterY + 2, Hg * 0.26 * (1 + lift * 0.3), Hg * 0.03, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, groundY + 2, Hg * FOOT_R * 1.35, Hg * FOOT_R * SE * 1.5, 0, 0, TAU);
     ctx.fill();
 
     ctx.save();
@@ -608,129 +890,162 @@ h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
     ctx.rotate(S.glassRot);
     ctx.translate(0, Hg * 0.5);
     ctx.scale(Hg, Hg);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
 
-    // Levels are found in the plane the glass tips in; what we draw is the slice through the glass's middle,
-    // whose surface line has normal (n.x, n.y). Tipping straight toward or away from you keeps it flat on screen.
-    const n = norm3(S.g), tilt = Math.acos(Math.max(-1, Math.min(1, n[1])));
-    const g2 = [Math.sin(tilt), Math.cos(tilt)];
+    const n = S.n, s = tiltS(n);
     const V = S.Vs + S.Vh;
-    const Vshow = Math.min(V, area(clip(POLY, g2, dot(RIM_R, g2))));   // never above the rim while pouring
-    const dTop = levelFor(Vshow, g2), dStout = levelFor(Math.min(S.Vs, Vshow), g2);
-    const sv = [n[0], n[1]], sl = Math.hypot(sv[0], sv[1]) || 1e-6;
-    const su = [sv[0] / sl, sv[1] / sl];
+    const dTop = levelFor(V, n), dStout = levelFor(S.Vs, n);
+    const topRing = ring(n, dTop), stoutRing = ring(n, dStout);
 
-    // Stream off the low lip. Pouring out the back goes behind the glass.
-    let stream = null;
-    if (S.streamW > 0.002) {
-      const side = g2[0] > 1e-3 ? n[0] / g2[0] : 0;
-      const sx = RIM_R[0] * side + Math.sign(side) * 0.012, sy = RIM_R[1];
-      const dir = sl > 0.2 ? su : [0, 1];
-      stream = { sx, sy, dir, behind: n[2] < 0 && Math.abs(side) < 0.9 };
-      if (stream.behind) drawStream(sx, sy, dir, true);
-    }
-
-    // Faint glass body.
-    polyPath(POLY);
-    ctx.fillStyle = 'rgba(255,240,220,0.035)';
+    // Back of the glass.
+    silhouettePath();
+    ctx.fillStyle = 'rgba(255,240,220,0.04)';
     ctx.fill();
+    ctx.beginPath(); backArc(R_RIM, -1, true, 40);
+    ctx.strokeStyle = 'rgba(255,246,230,0.16)'; ctx.lineWidth = 0.012; ctx.stroke();
 
-    // Head.
-    const head = clip(POLY, sv, dTop);
-    if (head.length > 2) {
-      const fg = ctx.createLinearGradient(su[0] * dTop / sl, su[1] * dTop / sl, su[0] * dStout / sl, su[1] * dStout / sl);
-      fg.addColorStop(0, '#f6ead0'); fg.addColorStop(0.6, '#ecdcb6'); fg.addColorStop(1, '#cdb184');
-      polyPath(head); ctx.fillStyle = fg; ctx.fill();
+    for (const g of S.streams) if (g.behind) drawStream(g);
+    for (const q of S.drops) if (q.behind) drawDrop(q);
+
+    // Lacing: a film of head left on the glass where the pint used to be.
+    if (S.drank > 0) {
+      silhouettePath(S.headTop0);
+      const lf = ctx.createLinearGradient(0, -S.headTop0 * CE, 0, -S.headTop0 * CE + 0.35);
+      lf.addColorStop(0, 'rgba(241,228,198,0.2)'); lf.addColorStop(0.15, 'rgba(241,228,198,0.09)'); lf.addColorStop(1, 'rgba(241,228,198,0.03)');
+      ctx.fillStyle = lf; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(rAt(S.headTop0), -S.headTop0 * CE); frontArc(rAt(S.headTop0), -S.headTop0, true, 32);
+      ctx.strokeStyle = 'rgba(241,228,198,0.22)'; ctx.lineWidth = 0.006; ctx.stroke();
     }
 
-    // Stout, ruby at the edges where the light comes through.
-    const stout = clip(POLY, sv, dStout);
-    if (stout.length > 2) {
-      const s = S.surge, e = s * s * (3 - 2 * s);
-      const sg = ctx.createLinearGradient(-0.3, 0, 0.3, 0);
-      const edge = rgb(mix([150, 110, 74], [74, 22, 12], e));
-      const core = rgb(mix([128, 92, 62], [12, 7, 5], e));
-      sg.addColorStop(0, edge); sg.addColorStop(0.18, core); sg.addColorStop(0.82, core); sg.addColorStop(1, edge);
-      polyPath(stout); ctx.fillStyle = sg; ctx.fill();
+    if (V > 1e-5) {
+      // Head: everything below the top surface, in cream.
+      const fg = ctx.createLinearGradient(0, -S.headTop0 * CE, 0, -S.stoutTop0 * CE);
+      fg.addColorStop(0, '#e6d3aa'); fg.addColorStop(1, '#c4a679');
+      bodyPath(topRing); ctx.fillStyle = fg; ctx.fill();
+      texture(() => bodyPath(topRing), 0.5, [-R_RIM - 0.02, ringBox(topRing)[1], R_RIM + 0.02, Math.min(R_BASE * SE, ringBox(stoutRing)[3]) + 0.02]);
 
-      // Cream line where head meets stout.
-      const o = dStout / sl;
-      const bl = ctx.createLinearGradient(su[0] * (o - 0.012), su[1] * (o - 0.012), su[0] * (o + 0.02), su[1] * (o + 0.02));
-      bl.addColorStop(0, 'rgba(205,177,132,0.9)'); bl.addColorStop(1, 'rgba(205,177,132,0)');
-      ctx.fillStyle = bl; ctx.fill();
+      // Stout over it, ruby at the edges where the light comes through.
+      if (S.Vs > 1e-5) {
+        const e = S.surge * S.surge * (3 - 2 * S.surge);
+        const sg = ctx.createLinearGradient(-0.3, 0, 0.3, 0);
+        sg.addColorStop(0, '#4a160c'); sg.addColorStop(0.2, '#0c0705'); sg.addColorStop(0.8, '#0c0705'); sg.addColorStop(1, '#4a160c');
+        bodyPath(stoutRing); ctx.fillStyle = sg; ctx.fill();
+        const shade = ctx.createLinearGradient(0, -0.9 * CE, 0, 0);
+        shade.addColorStop(0, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(30,8,4,0.35)');
+        ctx.fillStyle = shade; ctx.fill();
 
-      if (S.surge < 1) {
-        ctx.save(); polyPath(stout); ctx.clip();
-        ctx.fillStyle = `rgba(236,220,182,${0.55 * (1 - e)})`;
-        for (const p of S.particles) { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
-        ctx.restore();
+        // The surge: dark stout settles up from the base through the creamy pour.
+        if (S.surge < 1) {
+          const p = e * 1.15;
+          const yb = FOOT * CE, yt = -S.stoutTop0 * CE;
+          const sv = ctx.createLinearGradient(0, yb, 0, yt);
+          const tan = 'rgba(146,108,72,', a0 = Math.max(0, Math.min(1, p)), a1 = Math.min(1, p + 0.22);
+          sv.addColorStop(0, tan + '0)'); sv.addColorStop(a0, tan + '0)'); sv.addColorStop(a1, tan + '1)'); sv.addColorStop(1, tan + '1)');
+          ctx.fillStyle = sv; ctx.fill();
+          ctx.save(); bodyPath(stoutRing); ctx.clip();
+          ctx.fillStyle = `rgba(236,220,182,${0.5 * (1 - e)})`;
+          for (const q of S.particles) { ctx.beginPath(); ctx.arc(q.x, q.y * CE + 0.2 * SE, q.r, 0, TAU); ctx.fill(); }
+          ctx.restore();
+        }
+
+        // Where head meets stout.
+        frontEdge(stoutRing);
+        ctx.strokeStyle = 'rgba(176,140,96,0.55)'; ctx.lineWidth = 0.014; ctx.stroke();
+        ctx.strokeStyle = 'rgba(226,204,160,0.5)'; ctx.lineWidth = 0.004; ctx.stroke();
+      }
+
+      // The top of the head, seen from a little above.
+      const headThick = S.Vh / V0;
+      facePath(topRing);
+      if (headThick > 0.004) {
+        const tc = pj(-n[0] * 0.05, (topRing.yL + topRing.yR) / 2, 0);
+        const ff = ctx.createRadialGradient(tc[0], tc[1] - 0.02, 0, tc[0], tc[1], 0.32);
+        ff.addColorStop(0, '#fffaee'); ff.addColorStop(1, '#f0e2c2');
+        ctx.fillStyle = ff; ctx.fill();
+        texture(() => facePath(topRing), 0.35, ringBox(topRing));
+        // The near lip of the head catches the light; its far edge sits in shadow.
+        frontEdge(topRing);
+        ctx.strokeStyle = 'rgba(255,253,245,0.9)'; ctx.lineWidth = 0.006; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(topRing.pts[NPHI / 2][0], topRing.pts[NPHI / 2][1]);
+        for (let i = NPHI / 2 + 1; i <= NPHI; i++) ctx.lineTo(topRing.pts[i][0], topRing.pts[i][1]);
+        ctx.strokeStyle = 'rgba(150,120,80,0.35)'; ctx.lineWidth = 0.008; ctx.stroke();
+      } else {
+        ctx.fillStyle = '#1a0d08'; ctx.fill();
       }
     }
 
+    // Front of the glass: highlights, walls, rim, heavy foot.
+    ctx.save(); silhouettePath(); ctx.clip();
+    const hl = ctx.createLinearGradient(-0.2, 0, -0.11, 0);
+    hl.addColorStop(0, 'rgba(255,255,255,0)'); hl.addColorStop(0.5, 'rgba(255,255,255,0.11)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl; ctx.fillRect(-0.3, -1.2, 0.25, 1.3);
+    const hr = ctx.createLinearGradient(0.17, 0, 0.24, 0);
+    hr.addColorStop(0, 'rgba(255,255,255,0)'); hr.addColorStop(1, 'rgba(255,255,255,0.07)');
+    ctx.fillStyle = hr; ctx.fillRect(0.1, -1.2, 0.25, 1.3);
+    ctx.restore();
+
+    for (const side of [-1, 1]) {
+      ctx.beginPath(); ctx.moveTo(side * R_BASE, 0); wallTo(side, 0, -1);
+      ctx.strokeStyle = 'rgba(255,246,230,0.2)'; ctx.lineWidth = 0.022; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.38)'; ctx.lineWidth = 0.004; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(R_RIM, -CE); frontArc(R_RIM, -1, true, 40);
+    ctx.strokeStyle = 'rgba(255,246,230,0.24)'; ctx.lineWidth = 0.016; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.004; ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(-FOOT_R, 0);
+    ctx.lineTo(-FOOT_R, FOOT * CE);
+    frontArc(FOOT_R, FOOT, false, 24);
+    ctx.lineTo(FOOT_R, 0);
+    backArc(FOOT_R, 0, true, 24);
+    ctx.closePath();
+    const bg = ctx.createLinearGradient(0, -FOOT_R * SE, 0, FOOT * CE + FOOT_R * SE);
+    bg.addColorStop(0, 'rgba(255,240,220,0.08)'); bg.addColorStop(1, 'rgba(255,240,220,0.26)');
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,246,230,0.22)'; ctx.lineWidth = 0.004; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(R_BASE, 0); frontArc(R_BASE, 0, true, 24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 0.004; ctx.stroke();
+
     // The G, printed on the front of the glass.
     ctx.save();
-    ctx.translate(0, -G_MID);
+    ctx.translate(0, -G_MID * CE + rAt(G_MID) * SE);
     ctx.scale(1 / Hg, 1 / Hg);
-    const px = Math.round(G_H * Hg / 0.72);
-    ctx.font = `${px}px "Abril Fatface", Didot, Georgia, serif`;
+    const fpx = Math.round(G_H * CE * Hg / 0.72);
+    ctx.font = `${fpx}px "Abril Fatface", Didot, Georgia, serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     const m = ctx.measureText('G');
-    const asc = m.actualBoundingBoxAscent || px * 0.72, desc = m.actualBoundingBoxDescent || 0;
+    const asc = m.actualBoundingBoxAscent || fpx * 0.72, desc = m.actualBoundingBoxDescent || 0;
     const yOff = (asc - desc) / 2;
     ctx.fillStyle = 'rgba(20,12,6,0.35)';
     ctx.fillText('G', 1, yOff + 1.5);
-    ctx.fillStyle = 'rgba(214,178,98,0.92)';
+    ctx.fillStyle = 'rgba(214,178,98,0.94)';
     ctx.fillText('G', 0, yOff);
     ctx.restore();
 
-    // Highlight streak down the left of the glass.
-    ctx.save(); polyPath(POLY); ctx.clip();
-    const hl = ctx.createLinearGradient(-0.24, 0, -0.15, 0);
-    hl.addColorStop(0, 'rgba(255,255,255,0)'); hl.addColorStop(0.5, 'rgba(255,255,255,0.10)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = hl; ctx.fillRect(-0.3, -1, 0.2, 1);
-    ctx.restore();
-
-    // Walls.
-    ctx.beginPath();
-    ctx.moveTo(RIM_L[0], RIM_L[1]);
-    for (let i = N + 2; i < POLY.length; i++) ctx.lineTo(POLY[i][0], POLY[i][1]);
-    for (let i = 0; i <= N; i++) ctx.lineTo(POLY[i][0], POLY[i][1]);
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(255,246,230,0.20)'; ctx.lineWidth = 0.024; ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.38)'; ctx.lineWidth = 0.004; ctx.stroke();
-
-    // Heavy base.
-    const bw = halfW(0);
-    ctx.beginPath();
-    ctx.moveTo(-bw - 0.008, 0.002);
-    ctx.lineTo(bw + 0.008, 0.002);
-    ctx.lineTo(bw + 0.02, 0.07);
-    ctx.quadraticCurveTo(bw + 0.022, 0.078, bw + 0.012, 0.078);
-    ctx.lineTo(-bw - 0.012, 0.078);
-    ctx.quadraticCurveTo(-bw - 0.022, 0.078, -bw - 0.02, 0.07);
-    ctx.closePath();
-    const bg = ctx.createLinearGradient(0, 0, 0, 0.078);
-    bg.addColorStop(0, 'rgba(255,240,220,0.10)'); bg.addColorStop(1, 'rgba(255,240,220,0.24)');
-    ctx.fillStyle = bg; ctx.fill();
-    ctx.strokeStyle = 'rgba(255,246,230,0.22)'; ctx.lineWidth = 0.004; ctx.stroke();
-
-    if (stream && !stream.behind) drawStream(stream.sx, stream.sy, stream.dir, false);
+    for (const g of S.streams) if (!g.behind) drawStream(g);
+    for (const q of S.drops) if (!q.behind) drawDrop(q);
 
     // Result: where the middle of the G is, and where the line landed.
     if (S.phase === 'result' && S.result) {
-      const w = halfW(G_MID) + 0.07;
+      const rg = rAt(G_MID);
       ctx.setLineDash([0.018, 0.012]);
-      ctx.strokeStyle = 'rgba(226,191,111,0.95)'; ctx.lineWidth = 0.005;
-      ctx.beginPath(); ctx.moveTo(-w, -G_MID); ctx.lineTo(w, -G_MID); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-rg - 0.06, -G_MID * CE);
+      ctx.lineTo(-rg, -G_MID * CE); frontArc(rg, -G_MID, false, 32); ctx.lineTo(rg + 0.06, -G_MID * CE);
+      ctx.strokeStyle = 'rgba(226,191,111,0.95)'; ctx.lineWidth = 0.005; ctx.stroke();
       ctx.setLineDash([]);
-      const y = S.result.ys, w2 = halfW(Math.min(1, -y)) + 0.07;
+      const y = S.result.ys, w2 = rAt(Math.min(1, -y)) + 0.025;
       ctx.strokeStyle = 'rgba(241,228,198,0.95)'; ctx.lineWidth = 0.004;
-      ctx.beginPath(); ctx.moveTo(w2 - 0.05, y); ctx.lineTo(w2, y); ctx.moveTo(-w2, y); ctx.lineTo(-w2 + 0.05, y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(w2, y * CE); ctx.lineTo(w2 + 0.05, y * CE);
+      ctx.moveTo(-w2, y * CE); ctx.lineTo(-w2 - 0.05, y * CE);
+      ctx.stroke();
       ctx.save(); ctx.scale(1 / Hg, 1 / Hg);
       ctx.font = `600 ${Math.max(11, Math.round(Hg * 0.03))}px "Barlow Condensed", "Arial Narrow", sans-serif`;
       ctx.fillStyle = 'rgba(226,191,111,0.95)';
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-      ctx.fillText('MID-G', -w * Hg, -G_MID * Hg - 4);
+      ctx.fillText('MID-G', (-rg - 0.06) * Hg, -G_MID * CE * Hg - 4);
       ctx.restore();
     }
 

@@ -1,6 +1,6 @@
 // Offline support: the game shell is cached on install; pages come from the network first so updates land,
 // everything else (icons, fonts) is served from cache and refreshed in the background.
-const CACHE = 'split-the-g-v2';
+const CACHE = 'split-the-g-v3';
 const SHELL = [
   './',
   './index.html',
