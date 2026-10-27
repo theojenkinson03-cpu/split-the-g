@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Split the G</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Tip your phone like a pint and stop your sip right in the middle of the G.">
+<meta name="theme-color" content="#120d0a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Split the G">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap">
@@ -56,14 +65,15 @@ body {
 
 .panel {
   position: fixed; inset: auto 0 0;
-  padding-top: 48px;
-  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 14px;
+  padding-top: 44px;
+  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 88%, transparent) 40%, var(--bg));
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 88%, transparent) 36px, var(--bg));
   pointer-events: none;
 }
-.panel > * { max-width: 26rem; margin-inline: auto; pointer-events: auto; }
+.panel > * { width: 100%; max-width: 26rem; margin-inline: auto; pointer-events: auto; box-sizing: border-box; }
 
 h1, h2 {
   font-family: var(--display);
@@ -73,12 +83,12 @@ h1, h2 {
   text-wrap: balance;
   letter-spacing: 0.005em;
 }
-h1 { font-size: clamp(2.6rem, 11vw, 3.4rem); }
-h2 { font-size: clamp(2.2rem, 9vw, 2.8rem); }
-.lede { margin: 10px 0 18px; color: var(--cream); opacity: 0.88; max-width: 34ch; }
-.fine { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
+h1 { font-size: clamp(2.4rem, 11vw, 3.2rem); }
+h2 { font-size: clamp(2.1rem, 9vw, 2.7rem); }
+.lede { margin: 8px 0 0; color: var(--cream); opacity: 0.88; max-width: 36ch; text-wrap: pretty; }
+.fine { margin: 0; font-size: 13px; color: var(--muted); }
 
-button {
+.btn {
   display: block; width: 100%;
   appearance: none; border: 0; cursor: pointer;
   padding: 15px 18px;
@@ -90,8 +100,37 @@ button {
   letter-spacing: 0.16em;
   box-shadow: 0 1px 0 rgba(255,255,255,0.35) inset, 0 6px 18px rgba(0,0,0,0.45);
 }
-button:active { transform: translateY(1px); filter: brightness(0.95); }
-button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+.btn:active { transform: translateY(1px); filter: brightness(0.95); }
+.btn:focus-visible, .link:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+.link {
+  appearance: none; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--brass-hi); font: inherit; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* Beer / foam picker: two tap handles side by side. */
+.pick { border: 0; margin: 0; padding: 0; min-width: 0; }
+.pick legend {
+  padding: 0; margin-bottom: 8px;
+  font: 600 12px/1 var(--label); text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted);
+}
+.pick .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pick label {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--brass) 30%, transparent);
+  border-radius: 3px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--cream) 4%, transparent);
+}
+.pick input { position: absolute; opacity: 0; pointer-events: none; }
+.pick .swatch { flex: none; width: 14px; height: 26px; border-radius: 2px 2px 3px 3px; box-shadow: 0 0 0 1px rgba(241,228,198,0.25); }
+.pick .swatch.beer { background: linear-gradient(to bottom, #ecdcb6 0 34%, #b99a6c 34% 40%, #0d0806 40%); }
+.pick .swatch.foam { background: linear-gradient(to bottom, #f6ead0 0 12%, #b99a6c 12% 16%, #0d0806 16%); box-shadow: 0 0 0 1px rgba(241,228,198,0.25), 0 -2px 0 0 var(--brass-hi); }
+.pick .txt { min-width: 0; }
+.pick b { display: block; font: 700 17px/1.1 var(--label); text-transform: uppercase; letter-spacing: 0.12em; color: var(--cream); }
+.pick small { display: block; font-size: 12.5px; line-height: 1.25; color: var(--muted); }
+.pick label:has(input:checked) { border-color: var(--brass-hi); background: color-mix(in srgb, var(--brass) 16%, transparent); }
+.pick label:has(input:focus-visible) { outline: 2px solid var(--cream); outline-offset: 2px; }
 
 .status {
   font-family: var(--label);
@@ -105,10 +144,10 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
 }
 .status small { display: block; font: 400 14px/1.4 var(--body); letter-spacing: 0; text-transform: none; color: var(--muted); margin-top: 4px; }
 
-.verdict-sub { margin: 8px 0 14px; opacity: 0.88; }
+.verdict-sub { margin: 8px 0 12px; opacity: 0.88; }
 .stats {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-  margin: 0 0 16px; padding: 12px 0;
+  margin: 0; padding: 10px 0;
   border-block: 1px solid color-mix(in srgb, var(--brass) 35%, transparent);
 }
 .stats div { min-width: 0; }
@@ -125,15 +164,11 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
   <span class="tally" id="tally">Pint 0 · Best –</span>
 </header>
 
-<section class="panel">
+<section class="panel" id="panel">
   <div id="intro">
     <h1>Split the G</h1>
-    <p class="lede">One sip. Tip your phone like a pint and stop when the line between stout and head cuts the G in half.</p>
-    <button id="go" type="button">Pour a pint</button>
-    <p class="fine">Tip the phone sideways to drink. No tilt sensor? Drag the glass sideways.</p>
+    <p class="lede">One sip. Tip your phone like a pint and stop when the line lands right in the middle of the G.</p>
   </div>
-
-  <p id="status" class="status" hidden></p>
 
   <div id="result" hidden>
     <h2 id="verdict">Split it.</h2>
@@ -143,8 +178,31 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
       <div><dt>Score</dt><dd id="score">–</dd></div>
       <div><dt>Best</dt><dd id="best">–</dd></div>
     </dl>
-    <button id="again" type="button">Pour another</button>
   </div>
+
+  <fieldset class="pick" id="pick">
+    <legend>Which line splits the G?</legend>
+    <div class="opts">
+      <label for="mode-beer">
+        <input type="radio" name="mode" id="mode-beer" value="beer" checked>
+        <span class="swatch beer" aria-hidden="true"></span>
+        <span class="txt"><b>Beer</b><small>Where the stout meets the head</small></span>
+      </label>
+      <label for="mode-foam">
+        <input type="radio" name="mode" id="mode-foam" value="foam">
+        <span class="swatch foam" aria-hidden="true"></span>
+        <span class="txt"><b>Foam</b><small>The top of the head</small></span>
+      </label>
+    </div>
+  </fieldset>
+
+  <div id="actions">
+    <button id="go" class="btn" type="button">Pour a pint</button>
+  </div>
+
+  <p class="fine" id="fine">Uses your phone’s motion sensor. On iPhone, tap Allow when asked.</p>
+
+  <p id="status" class="status" hidden></p>
 </section>
 
 <script>
@@ -208,46 +266,61 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
 
   // The G: centre height and letter height, as fractions of the glass. 150 mm is a pint glass's inside height.
   const G_MID = 0.6, G_H = 0.11, GLASS_MM = 150;
+  const UP = [0, 1];
 
   // ---------- State ----------
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch {} }
   };
+  const MODES = {
+    beer: { line: 'The stout line', short: 'stout line' },
+    foam: { line: 'The top of the head', short: 'head' }
+  };
   const S = {
     phase: 'title', phaseT: 0,
+    mode: store.get('stg-mode') === 'foam' ? 'foam' : 'beer',
     Vs: 0, Vh: 0, drank: 0,
-    psi: 0, omega: 0,
+    // Gravity as seen by the glass (x right, y down the glass, z out of the screen), smoothed on a spring.
+    g: [0, 1, 0], gv: [0, 0, 0],
     glassRot: 0, dragTarget: 0,
-    flow: 0, streamW: 0, quietT: 0,
+    flow: 0, streamW: 0, quietT: 0, uprightT: 0, armed: false,
     surge: 1, particles: [],
-    result: null,
-    pints: 0, best: Number(store.get('stg-best')) || 0
+    result: null, hg: 0,
+    pints: 0,
+    best: {
+      beer: Number(store.get('stg-best-beer') || store.get('stg-best')) || 0,
+      foam: Number(store.get('stg-best-foam')) || 0
+    }
   };
   function fillPint() {
     const stoutTop = 0.83 + Math.random() * 0.04;
     const headTop = Math.min(0.955, stoutTop + 0.075 + Math.random() * 0.025);
-    S.Vs = area(clip(POLY, [0, 1], -stoutTop));
-    S.Vh = area(clip(POLY, [0, 1], -headTop)) - S.Vs;
+    S.Vs = area(clip(POLY, UP, -stoutTop));
+    S.Vh = area(clip(POLY, UP, -headTop)) - S.Vs;
     S.drank = 0;
   }
   fillPint();
 
-  // ---------- Input ----------
-  let sensorActive = false, sensorAngle = 0, dragging = false, dragStartX = 0, keyDir = 0, W = 0, H = 0, DPR = 1;
+  // ---------- Input: motion sensor first, drag only where there is no sensor ----------
+  let sensorActive = false, sensorDenied = false, sensorG = [0, 1, 0];
+  let dragging = false, dragStartX = 0, keyDir = 0, W = 0, H = 0, DPR = 1;
 
   function onOrient(e) {
     if (e.beta == null || e.gamma == null) return;
     const b = e.beta * Math.PI / 180, c = e.gamma * Math.PI / 180;
-    // Gravity projected onto the screen, in screen coords (x right, y down).
+    // Gravity in device axes, flipped to screen convention (y down): x right, y down, z toward the viewer.
     let gx = Math.sin(c) * Math.cos(b), gy = Math.sin(b);
+    const gz = -Math.cos(b) * Math.cos(c);
     const ang = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180;
     if (ang) { const x = gx * Math.cos(ang) - gy * Math.sin(ang); gy = gx * Math.sin(ang) + gy * Math.cos(ang); gx = x; }
     sensorActive = true;
-    sensorAngle = Math.hypot(gx, gy) < 0.3 ? 0 : Math.atan2(gx, gy);
+    sensorG = [gx, gy, gz];
   }
 
+  const noSensor = () => !sensorActive;
   cv.addEventListener('pointerdown', e => {
+    if (!noSensor()) return;
     dragging = true; dragStartX = e.clientX;
     cv.setPointerCapture(e.pointerId);
   });
@@ -266,49 +339,69 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { keyDir = 0; S.dragTarget = 0; }
   });
 
-  async function enableSensors() {
+  // Must start inside the tap handler: iOS only shows the motion prompt from a user gesture.
+  function enableSensors() {
+    let ask = Promise.resolve('granted');
     try {
       if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        await DeviceOrientationEvent.requestPermission();
+        ask = DeviceOrientationEvent.requestPermission();
       }
     } catch {}
-    addEventListener('deviceorientation', onOrient);
-    try { await navigator.wakeLock?.request('screen'); } catch {}
+    return ask.catch(() => 'denied').then(res => {
+      if (res !== 'granted') sensorDenied = true;
+      addEventListener('deviceorientation', onOrient);
+      keepAwake();
+      try { screen.orientation?.lock?.('portrait').catch(() => {}); } catch {}
+    });
   }
+  async function keepAwake() { try { await navigator.wakeLock?.request('screen'); } catch {} }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.phase !== 'title') keepAwake(); });
 
   // ---------- Phases & UI ----------
-  const ui = { intro: $('intro'), status: $('status'), result: $('result') };
-  function show(which) { for (const k in ui) ui[k].hidden = k !== which; }
+  const els = { intro: $('intro'), result: $('result'), pick: $('pick'), actions: $('actions'), fine: $('fine'), status: $('status') };
+  const VIEWS = {
+    title: ['intro', 'pick', 'actions', 'fine'],
+    result: ['result', 'pick', 'actions'],
+    play: ['status']
+  };
+  let panelH = 300;
+  function show(view) {
+    for (const k in els) els[k].hidden = !VIEWS[view].includes(k);
+    panelH = $('panel').offsetHeight;
+  }
+  let statusKey = '';
   function setStatus(main, sub) {
-    ui.status.textContent = main;
-    if (sub) { const s = document.createElement('small'); s.textContent = sub; ui.status.append(s); }
+    const key = main + '|' + (sub || '');
+    if (key === statusKey) return;
+    statusKey = key;
+    els.status.textContent = main;
+    if (sub) { const s = document.createElement('small'); s.textContent = sub; els.status.append(s); }
   }
   function tally() {
-    $('tally').textContent = `Pint ${S.pints} · Best ${S.best ? S.best : '–'}`;
+    const b = S.best[S.mode];
+    $('tally').textContent = `${S.mode === 'beer' ? 'Beer' : 'Foam'} · Best ${b || '–'}`;
+  }
+
+  for (const r of document.querySelectorAll('input[name="mode"]')) {
+    r.checked = r.value === S.mode;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      S.mode = r.value; store.set('stg-mode', S.mode); tally();
+    });
   }
   tally();
-
-  function tipHint() {
-    return sensorActive
-      ? ['Tip the phone sideways to drink', 'One sip only. Level it out to stop.']
-      : ['Drag sideways to tip the glass', 'One sip only. Let go to stop.'];
-  }
 
   function setPhase(p) {
     S.phase = p; S.phaseT = 0;
     if (p === 'settle') {
       fillPint();
-      S.surge = 0; S.result = null; S.quietT = 0;
+      S.surge = 0; S.result = null; S.quietT = 0; S.uprightT = 0; S.armed = false;
       S.particles = Array.from({ length: 170 }, () => ({
-        x: (Math.random() - 0.5) * 0.7, y: -0.04 - Math.random() * 0.8,
+        x: (Math.random() - 0.5) * 0.5, y: -0.04 - Math.random() * 0.8,
         r: 0.002 + Math.random() * 0.003, v: 0.03 + Math.random() * 0.06
       }));
-      show('status');
+      show('play');
       setStatus('Letting it settle…', 'A perfect pour takes 119.5 seconds. We’ll give you three.');
-    } else if (p === 'ready') {
-      setStatus(...tipHint());
-    } else if (p === 'drinking') {
-      setStatus('Drinking…', sensorActive ? 'Bring it level to stop.' : 'Let go to stop.');
     } else if (p === 'resolve') {
       setStatus('Let’s have a look…');
     } else if (p === 'result') {
@@ -316,74 +409,96 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     }
   }
 
+  function playHint() {
+    if (S.phase === 'drinking') return ['Drinking…', sensorActive ? 'Stand it back upright to stop.' : 'Let go to stop.'];
+    if (!sensorActive) {
+      return ['Drag sideways to tip the glass', sensorDenied
+        ? 'Motion access is off. Reopen the app and tap Allow to drink by tilting.'
+        : 'No motion sensor here. One sip only. Let go to stop.'];
+    }
+    if (!S.armed) return ['Stand your phone upright', 'Hold it straight up like a full pint.'];
+    const target = S.mode === 'beer' ? 'the stout line' : 'the top of the head';
+    return ['Tip it to drink', `One sip. Stand it back up when ${target} hits the middle of the G.`];
+  }
+
   function showResult() {
-    const ys = levelFor(S.Vs, [0, 1]);
+    const ys = levelFor(S.mode === 'beer' ? S.Vs : S.Vs + S.Vh, UP);
     const err = -ys - G_MID;            // >0: line sits above the middle of the G
     const mm = err * GLASS_MM, a = Math.abs(mm), half = G_H * GLASS_MM / 2;
+    const line = MODES[S.mode].line;
+    const empty = S.Vs + (S.mode === 'foam' ? S.Vh : 0) < 0.03 * A0;
     let v, sub;
-    if (S.Vs < 0.03 * A0) { v = 'Necked it.'; sub = 'That’s not splitting the G. That’s finishing the pint.'; }
-    else if (a <= 1.5) { v = 'Split it.'; sub = 'Straight through the middle of the G. The barman nods.'; }
+    if (empty) { v = 'Necked it.'; sub = 'That’s not splitting the G. That’s finishing the pint.'; }
+    else if (a <= 1.5) { v = 'Split it.'; sub = `${line} runs straight through the middle of the G. The barman nods.`; }
     else if (a <= 4) { v = 'So close.'; sub = mm > 0 ? 'A shade high. One more swallow would have done it.' : 'A shade low. You went just past the middle.'; }
     else if (a <= half) { v = 'On the G.'; sub = mm > 0 ? 'Top half of the G. Take a bigger gulp next time.' : 'Bottom half of the G. Ease off sooner.'; }
-    else if (mm > 0) { v = 'Missed the G.'; sub = 'The line never reached the G. Get stuck in.'; }
-    else { v = 'Gone past it.'; sub = 'You drank straight through the G.'; }
-    const score = S.Vs < 0.03 * A0 ? 0 : Math.round(100 * Math.exp(-((a / 5) ** 2)));
+    else if (mm > 0) { v = 'Missed the G.'; sub = `${line} never got down to the G. Get stuck in.`; }
+    else { v = 'Gone past it.'; sub = `${line} sank straight through the G.`; }
+    const score = empty ? 0 : Math.round(100 * Math.exp(-((a / 5) ** 2)));
     S.pints++;
-    const newBest = score > S.best;
-    if (newBest) { S.best = score; store.set('stg-best', String(score)); }
+    const newBest = score > S.best[S.mode];
+    if (newBest) { S.best[S.mode] = score; store.set('stg-best-' + S.mode, String(score)); }
     S.result = { ys, score };
     $('verdict').textContent = v;
     $('verdictSub').textContent = sub;
     $('off').textContent = a < 0.05 ? '0.0 mm' : `${a.toFixed(1)} mm ${mm > 0 ? 'high' : 'low'}`;
     $('score').textContent = score;
     $('score').classList.toggle('hit', score >= 90);
-    $('best').textContent = S.best || '–';
+    $('best').textContent = S.best[S.mode] || '–';
     $('best').classList.toggle('hit', newBest && score > 0);
+    $('go').textContent = 'Pour another';
     tally();
     show('result');
-    if (a <= 1.5) try { navigator.vibrate?.([30, 40, 30]); } catch {}
+    if (a <= 1.5 && !empty) try { navigator.vibrate?.([30, 40, 30]); } catch {}
   }
 
-  let sensorsAsked = false;
-  async function start() {
-    if (!sensorsAsked) { sensorsAsked = true; await enableSensors(); }
-    setPhase('settle');
+  let sensorsAsked = null;
+  function start() {
+    if (!sensorsAsked) sensorsAsked = enableSensors();
+    sensorsAsked.then(() => setPhase('settle'));
   }
   $('go').addEventListener('click', start);
-  $('again').addEventListener('click', start);
   addEventListener('keydown', e => {
-    if ((e.key === ' ' || e.key === 'Enter') && (S.phase === 'title' || S.phase === 'result') && document.activeElement?.tagName !== 'BUTTON') {
+    if ((e.key === ' ' || e.key === 'Enter') && (S.phase === 'title' || S.phase === 'result') && !['BUTTON', 'INPUT'].includes(document.activeElement?.tagName)) {
       e.preventDefault(); start();
     }
   });
 
   // ---------- Simulation ----------
+  const norm3 = v => { const m = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / m, v[1] / m, v[2] / m]; };
+
   function step(dt) {
     S.phaseT += dt;
-    const playable = S.phase === 'ready' || S.phase === 'drinking';
-    if (keyDir && playable) S.dragTarget = Math.max(-2.4, Math.min(2.4, S.dragTarget + keyDir * 1.3 * dt));
-    const usingSensor = sensorActive && !dragging && !keyDir;
+    const live = S.phase === 'ready' || S.phase === 'drinking';
+    if (keyDir && live && noSensor()) S.dragTarget = Math.max(-2.4, Math.min(2.4, S.dragTarget + keyDir * 1.3 * dt));
 
-    const rotTarget = playable && !usingSensor ? S.dragTarget : 0;
+    const rotTarget = live && noSensor() ? S.dragTarget : 0;
     S.glassRot += (rotTarget - S.glassRot) * (1 - Math.exp(-dt * (dragging ? 18 : 6)));
 
-    let target = 0;
-    if (playable) target = usingSensor ? sensorAngle : S.glassRot;
-    else if (!usingSensor) target = S.glassRot;
+    let target = [0, 1, 0];
+    if (live) target = sensorActive ? norm3(sensorG) : [Math.sin(S.glassRot), Math.cos(S.glassRot), 0];
 
     // Liquid lags the glass on a damped spring, which gives the slosh.
     const k = 70, c = reduced ? 22 : 10, h = dt / 4;
-    for (let i = 0; i < 4; i++) {
-      S.omega += (k * (target - S.psi) - c * S.omega) * h;
-      S.psi += S.omega * h;
+    for (let s = 0; s < 4; s++) for (let i = 0; i < 3; i++) {
+      S.gv[i] += (k * (target[i] - S.g[i]) - c * S.gv[i]) * h;
+      S.g[i] += S.gv[i] * h;
     }
 
-    // Pour whatever is above the low point of the rim.
+    const n = norm3(S.g), tilt = Math.acos(Math.max(-1, Math.min(1, n[1])));
+    const tg = norm3(target), targetTilt = Math.acos(Math.max(-1, Math.min(1, tg[1])));
+
+    // Wait for the glass to be stood upright before the sip can start.
+    if (S.phase === 'ready' && !S.armed) {
+      S.uprightT = targetTilt < 0.3 ? S.uprightT + dt : 0;
+      if (S.uprightT > 0.35) S.armed = true;
+    }
+
+    // Pour whatever is above the low point of the rim (worked in the plane the glass is tipping in).
     S.flow = 0;
-    if (playable) {
-      const g = [Math.sin(S.psi), Math.cos(S.psi)];
-      const dRim = Math.max(dot(RIM_R, g), dot(RIM_L, g));
-      const Vmax = area(clip(POLY, g, dRim));
+    if (live && S.armed) {
+      const g2 = [Math.sin(tilt), Math.cos(tilt)];
+      const Vmax = area(clip(POLY, g2, dot(RIM_R, g2)));
       const V = S.Vs + S.Vh;
       if (V > Vmax) {
         const out = Math.min(V - Vmax, dt * Math.min(3 * (V - Vmax), 0.25 * A0));
@@ -406,11 +521,12 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     } else if (S.phase === 'ready') {
       if (S.drank > 0.004 * A0) setPhase('drinking');
     } else if (S.phase === 'drinking') {
-      if (Math.abs(S.psi) < 0.2 && S.flow < 1e-4 && !dragging && !keyDir) S.quietT += dt; else S.quietT = 0;
+      if (tilt < 0.25 && S.flow < 1e-4 && !dragging && !keyDir) S.quietT += dt; else S.quietT = 0;
       if (S.quietT > 0.6 || S.Vs + S.Vh < 0.002 * A0) setPhase('resolve');
     } else if (S.phase === 'resolve') {
       if (S.phaseT > 1.1) setPhase('result');
     }
+    if (live) setStatus(...playHint());
   }
 
   // ---------- Rendering ----------
@@ -418,9 +534,11 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     DPR = Math.min(devicePixelRatio || 1, 2.5);
     W = innerWidth; H = innerHeight;
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    panelH = $('panel').offsetHeight;
   }
   addEventListener('resize', resize);
   resize();
+  document.fonts?.ready.then(() => { panelH = $('panel').offsetHeight; });
 
   function polyPath(p) {
     ctx.beginPath();
@@ -431,17 +549,38 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
   const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
   const rgb = a => `rgb(${a[0]},${a[1]},${a[2]})`;
 
-  function layout() {
-    const top = 64, bottom = H - (S.phase === 'title' ? 230 : 200);
-    const avail = Math.max(160, bottom - top);
-    const Hg = Math.min(avail * 0.86, (W * 0.64) / 0.6);
-    const mid = top + avail / 2;
-    return { Hg, cx: W / 2, baseY: mid + Hg * 0.5 };
+  function layout(dt) {
+    const top = 56, bottom = H - panelH + 30;
+    const avail = Math.max(140, bottom - top);
+    const target = Math.min(avail * 0.86, (W * 0.64) / 0.6);
+    S.hg = S.hg ? S.hg + (target - S.hg) * (1 - Math.exp(-dt * 8)) : target;
+    const Hg = S.hg;
+    return { Hg, cx: W / 2, baseY: top + avail / 2 + Hg * 0.5 - Hg * 0.035 };
   }
 
-  function draw() {
+  function drawStream(sx, sy, dir, behind) {
+    ctx.save();
+    if (behind) {
+      // Falling behind the glass: only show it where the glass doesn't cover it.
+      ctx.beginPath();
+      ctx.rect(-10, -10, 20, 20);
+      for (let i = 0; i < POLY.length; i++) ctx.lineTo(POLY[i][0] * 1.08, POLY[i][1] - (POLY[i][1] < -0.99 ? 0.06 : 0.02));
+      ctx.closePath();
+      const bw = halfW(0) + 0.03;
+      ctx.rect(-bw, -0.01, bw * 2, 0.1);
+      ctx.clip('evenodd');
+    }
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(sx + dir[0] * 0.15, sy + dir[1] * 0.15, sx + dir[0] * 4, sy + dir[1] * 4);
+    ctx.strokeStyle = '#1b0d08'; ctx.lineWidth = S.streamW; ctx.lineCap = 'round'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(120,48,24,0.55)'; ctx.lineWidth = S.streamW * 0.35; ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw(dt) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const { Hg, cx, baseY } = layout();
+    const { Hg, cx, baseY } = layout(dt);
 
     // Room: dark bar, warm light overhead, a wooden counter.
     ctx.fillStyle = '#120d0a';
@@ -470,12 +609,25 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     ctx.translate(0, Hg * 0.5);
     ctx.scale(Hg, Hg);
 
-    const g = [Math.sin(S.psi), Math.cos(S.psi)];
+    // Levels are found in the plane the glass tips in; what we draw is the slice through the glass's middle,
+    // whose surface line has normal (n.x, n.y). Tipping straight toward or away from you keeps it flat on screen.
+    const n = norm3(S.g), tilt = Math.acos(Math.max(-1, Math.min(1, n[1])));
+    const g2 = [Math.sin(tilt), Math.cos(tilt)];
     const V = S.Vs + S.Vh;
-    // Never show liquid above the rim while it pours.
-    const dRim = Math.max(dot(RIM_R, g), dot(RIM_L, g));
-    const Vshow = Math.min(V, area(clip(POLY, g, dRim)));
-    const dTop = levelFor(Vshow, g), dStout = levelFor(Math.min(S.Vs, Vshow), g);
+    const Vshow = Math.min(V, area(clip(POLY, g2, dot(RIM_R, g2))));   // never above the rim while pouring
+    const dTop = levelFor(Vshow, g2), dStout = levelFor(Math.min(S.Vs, Vshow), g2);
+    const sv = [n[0], n[1]], sl = Math.hypot(sv[0], sv[1]) || 1e-6;
+    const su = [sv[0] / sl, sv[1] / sl];
+
+    // Stream off the low lip. Pouring out the back goes behind the glass.
+    let stream = null;
+    if (S.streamW > 0.002) {
+      const side = g2[0] > 1e-3 ? n[0] / g2[0] : 0;
+      const sx = RIM_R[0] * side + Math.sign(side) * 0.012, sy = RIM_R[1];
+      const dir = sl > 0.2 ? su : [0, 1];
+      stream = { sx, sy, dir, behind: n[2] < 0 && Math.abs(side) < 0.9 };
+      if (stream.behind) drawStream(sx, sy, dir, true);
+    }
 
     // Faint glass body.
     polyPath(POLY);
@@ -483,15 +635,15 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     ctx.fill();
 
     // Head.
-    const head = clip(POLY, g, dTop);
+    const head = clip(POLY, sv, dTop);
     if (head.length > 2) {
-      const fg = ctx.createLinearGradient(g[0] * dTop, g[1] * dTop, g[0] * dStout, g[1] * dStout);
+      const fg = ctx.createLinearGradient(su[0] * dTop / sl, su[1] * dTop / sl, su[0] * dStout / sl, su[1] * dStout / sl);
       fg.addColorStop(0, '#f6ead0'); fg.addColorStop(0.6, '#ecdcb6'); fg.addColorStop(1, '#cdb184');
       polyPath(head); ctx.fillStyle = fg; ctx.fill();
     }
 
     // Stout, ruby at the edges where the light comes through.
-    const stout = clip(POLY, g, dStout);
+    const stout = clip(POLY, sv, dStout);
     if (stout.length > 2) {
       const s = S.surge, e = s * s * (3 - 2 * s);
       const sg = ctx.createLinearGradient(-0.3, 0, 0.3, 0);
@@ -501,7 +653,8 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
       polyPath(stout); ctx.fillStyle = sg; ctx.fill();
 
       // Cream line where head meets stout.
-      const bl = ctx.createLinearGradient(g[0] * (dStout - 0.012), g[1] * (dStout - 0.012), g[0] * (dStout + 0.02), g[1] * (dStout + 0.02));
+      const o = dStout / sl;
+      const bl = ctx.createLinearGradient(su[0] * (o - 0.012), su[1] * (o - 0.012), su[0] * (o + 0.02), su[1] * (o + 0.02));
       bl.addColorStop(0, 'rgba(205,177,132,0.9)'); bl.addColorStop(1, 'rgba(205,177,132,0)');
       ctx.fillStyle = bl; ctx.fill();
 
@@ -561,17 +714,7 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     ctx.fillStyle = bg; ctx.fill();
     ctx.strokeStyle = 'rgba(255,246,230,0.22)'; ctx.lineWidth = 0.004; ctx.stroke();
 
-    // Pour stream off the low lip.
-    if (S.streamW > 0.002) {
-      const lip = dot(RIM_R, g) >= dot(RIM_L, g) ? RIM_R : RIM_L;
-      const side = lip === RIM_R ? 1 : -1;
-      const sx = lip[0] + side * 0.012, sy = lip[1];
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo(sx + g[0] * 0.15 + side * 0.04, sy + g[1] * 0.15, sx + g[0] * 4, sy + g[1] * 4);
-      ctx.strokeStyle = '#1b0d08'; ctx.lineWidth = S.streamW; ctx.lineCap = 'round'; ctx.stroke();
-      ctx.strokeStyle = 'rgba(120,48,24,0.55)'; ctx.lineWidth = S.streamW * 0.35; ctx.stroke();
-    }
+    if (stream && !stream.behind) drawStream(stream.sx, stream.sy, stream.dir, false);
 
     // Result: where the middle of the G is, and where the line landed.
     if (S.phase === 'result' && S.result) {
@@ -580,7 +723,7 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
       ctx.strokeStyle = 'rgba(226,191,111,0.95)'; ctx.lineWidth = 0.005;
       ctx.beginPath(); ctx.moveTo(-w, -G_MID); ctx.lineTo(w, -G_MID); ctx.stroke();
       ctx.setLineDash([]);
-      const y = S.result.ys, w2 = halfW(-y) + 0.07;
+      const y = S.result.ys, w2 = halfW(Math.min(1, -y)) + 0.07;
       ctx.strokeStyle = 'rgba(241,228,198,0.95)'; ctx.lineWidth = 0.004;
       ctx.beginPath(); ctx.moveTo(w2 - 0.05, y); ctx.lineTo(w2, y); ctx.moveTo(-w2, y); ctx.lineTo(-w2 + 0.05, y); ctx.stroke();
       ctx.save(); ctx.scale(1 / Hg, 1 / Hg);
@@ -594,15 +737,38 @@ button:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
     ctx.restore();
   }
 
+  show('title');
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     step(dt);
-    draw();
+    draw(dt);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // ---------- Installable app ----------
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  if (!standalone) {
+    const fine = els.fine;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (ios) {
+      fine.textContent = 'Add it to your home screen: tap Share, then Add to Home Screen. Tap Allow when it asks about motion.';
+    }
+    addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      fine.textContent = 'Uses your phone’s motion sensor. ';
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'link'; b.textContent = 'Install on your home screen';
+      b.addEventListener('click', async () => { e.prompt(); try { await e.userChoice; } catch {} b.remove(); });
+      fine.append(b);
+      panelH = $('panel').offsetHeight;
+    });
+  }
 })();
 </script>
 </body>
